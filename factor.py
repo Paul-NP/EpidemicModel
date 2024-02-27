@@ -1,7 +1,11 @@
 from __future__ import annotations
-from typing import Callable
+from typing import Callable, Optional, overload
 from types import FunctionType
 from inspect import getsource
+
+
+class FactorError(Exception):
+    pass
 
 
 class Factor:
@@ -11,59 +15,62 @@ class Factor:
     _name: str
     _static: bool
 
-    __name_len: int = 6
-    __list_factors: list[Factor] = []
+    __DEFAULT_NAME: str = 'unnamed'
 
-    # def __new__(cls, value: int | float | dict[int, float | int] | Callable[[int], float], name: str):
-    #     if name not in [f.name for f in cls.__list_factors]:
-    #         new_factor = super().__new__(cls)
-    #         cls.__list_factors.append(new_factor)
-    #         return new_factor
-    #     else:
-    #         # raise ValueError(f"create existing factor with name: {name}")
-    #         return [f for f in cls.__list_factors if f.name == name][0]
+    @overload
+    def __init__(self, keyframes: dict[int, float], name: Optional[str] = None):
+        pass
+
+    @overload
+    def __init__(self, value: int | float, name: Optional[str] = None):
+        pass
+
+    @overload
+    def __init__(self, func: Callable[[int], float], name: Optional[str] = None):
+        pass
 
     def __init__(self, value: int | float | dict[int, float | int] | Callable[[int], float],
-                 name: str = "name") -> None:
+                 name: Optional[str] = None) -> None:
         """
         init Factor
         :param value: static factor value | factor values by key points | function of time factor value
         :param name: name of factor
         """
-
-        if isinstance(name, str):
+        if name is None:
+            self._name = self.__DEFAULT_NAME
+        elif isinstance(name, str) and len(name) > 0:
             self._name = name
         else:
-            raise ValueError("Factor name must be string")
+            raise FactorError("Factor name must be not empty string")
 
         match value:
             case int(value) | float(value):
                 self._value = float(value)
                 self._func = lambda time: self._value
                 self._static = True
-                type_factor = "static"
+                type_factor = "stat"
                 description = self._value
             case dict(keyframes):
                 if any(not isinstance(key, int) or not isinstance(val, (float, int)) for key, val in keyframes.items()):
-                    raise ValueError("invalid dict of Factor values, keys must be int, values must be int|float")
+                    raise FactorError("invalid dict of Factor values, keys must be int, values must be int|float")
                 else:
                     self._func = self._get_keyframe_func(keyframes)
-                    self._value = self._func(0)
+                    self._value = self.__call__(0)
                 self._static = False
-                type_factor = "keyframes"
+                type_factor = "keys"
                 description = keyframes
             case FunctionType() as func:
                 self._func = func
-                self._value = self._func(1)
+                self.__call__(0)
                 line = " ".join(getsource(func).strip().replace("\n", " ").split())
                 self._static = False
-                type_factor = "function"
+                type_factor = "func"
                 description = line
             case _:
-                raise ValueError("invalid value for Factor, value can be int | float | dict[int, float | int] | "
-                                 "Callable[[int], float]")
+                raise FactorError("invalid value for Factor, value can be int | float | dict[int, float | int] | "
+                                  "Callable[[int], float]")
 
-        self._description = f"{type_factor:^11s}| {description}"
+        self._description = f"{type_factor} | {description}"
 
     @staticmethod
     def _get_keyframe_func(keyframes: dict[int, float | int]) -> Callable[[int], float]:
@@ -73,24 +80,22 @@ class Factor:
         :return: function based on keyframes
         """
 
+        keys = tuple(sorted(keyframes))
+        key_speed = {keys[i]: (keyframes[keys[i + 1]] - keyframes[keys[i]]) / (keys[i + 1] - keys[i])
+                     for i in range(len(keys) - 1)}
+        key_speed[keys[-1]] = key_speed[keys[-2]]
+
         def func(time: int) -> float:
-            if time < func.keys[0]:
-                shift = func.keys[0] - time
-                value = func.keyframes[func.keys[0]] - shift * func.key_speed[func.keys[0]]
+            if time < keys[0]:
+                shift = keys[0] - time
+                value = keyframes[keys[0]] - shift * key_speed[keys[0]]
                 return value
             else:
                 key_i = 0
-                while key_i < len(func.keys) - 1 and func.keys[key_i + 1] < time:
+                while key_i < len(keys) - 1 and keys[key_i + 1] < time:
                     key_i += 1
-                key = func.keys[key_i]
-                return func.keyframes[key] + func.key_speed[key] * (time - key)
-
-        func.keyframes = {key: keyframes[key] for key in sorted(list(keyframes.keys()))}
-        func.keys = tuple(func.keyframes.keys())
-        key_speed = {func.keys[i]: (func.keyframes[func.keys[i + 1]] - func.keyframes[func.keys[i]]) /
-                                   (func.keys[i + 1] - func.keys[i]) for i in range(len(func.keys) - 1)}
-        key_speed[func.keys[-1]] = key_speed[func.keys[-2]]
-        func.key_speed = key_speed
+                key = keys[key_i]
+                return keyframes[key] + key_speed[key] * (time - key)
 
         return func
 
@@ -113,18 +118,13 @@ class Factor:
         else:
             return f"{first}{operand}{second}"
 
-    # def __eq__(self, other: Factor) -> bool:
-    #     return self._name == other._name
-    #
-    # def __hash__(self):
-    #     return hash(self._name)
-
     def __call__(self, time: int) -> float:
-        self._value = self._func(time)
+        try:
+            res = self._func(time)
+        except ZeroDivisionError:
+            res = 0
+        self._value = res
         return self._value
-
-    # def __copy__(self) -> Factor:
-    #     return Factor(self._func, self._name)
 
     def __add__(self, other: Factor | int | float) -> Factor:
         match self._static, other:
@@ -305,10 +305,6 @@ class Factor:
         # return self.__str__()
         return f"Factor '{self._name:}' | {self._description}"
 
-    # def copy(self) -> Factor:
-    #     # добавить аргумент name, переименовывать при копировании
-    #     return self.__copy__()
-
     @property
     def value(self) -> float:
         return self._value
@@ -319,10 +315,10 @@ class Factor:
 
     @name.setter
     def name(self, new_name: str):
-        if isinstance(new_name, str):
+        if isinstance(new_name, str) and len(new_name) > 0:
             self._name = new_name
         else:
-            raise TypeError("the name for the factor must be a string")
+            raise TypeError("the name for the factor must be not empty string")
 
     @property
     def static(self) -> bool:

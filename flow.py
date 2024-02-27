@@ -1,17 +1,22 @@
 from __future__ import annotations
-from typing import Callable
+from typing import Callable, TypeAlias
 from factor import Factor, factor_one, factor_zero
 from stage import Stage
 from math import prod
 from random import random
 
 
+AnyFactor: TypeAlias = int | float | Factor
+
+class FlowError(Exception):
+    pass
+
 class Flow:
     _start: Stage
-    _end: Stage
-    _flow_factor: Factor
-    _infect_factor: Factor
-    _inducing_factors: dict[Stage, Factor]
+    _end: dict[Stage, AnyFactor]
+    _flow_factor: AnyFactor
+    _infect_factor: AnyFactor
+    _inducing_factors: dict[Stage, AnyFactor]
     _imitation: bool
 
     _calc_changes_func: Callable[[Flow], float | int]
@@ -19,35 +24,40 @@ class Flow:
     __stage_name_len: int = 6
     __factor_float_len: int = 4
 
-    def __init__(self, start: Stage, end: Stage, flow_factor: Factor = factor_one,
-                 infect_factor: Factor = factor_one, inducing_factors: dict[Stage, Factor] = None,
+    def __init__(self, start: Stage, end: Stage | dict[Stage, AnyFactor], flow_factor: AnyFactor = factor_one,
+                 infect_factor: AnyFactor = factor_one, inducing_factors: dict[Stage, AnyFactor] = None,
                  imitation: bool = False):
         """
         Flow adds the changes it makes to the change lists of the corresponding Stages.
         The flow value is calculated based on parameter 'num' of the stages involved and
         parameter 'value' of the factors involved
         :param start: start Stage of Flow
-        :param end: end Stage of Flow
-        :param flow_factor: factor used in calculating the probability at the end or factor for not inducing Flow
-        :param infect_factor: factor reflecting the probability of infection from one individual
+        :param end: dict of factors
+        :param flow_factor: the factor used in calculating the probability at the end or factor for not inducing Flow
+        :param infect_factor: the factor reflecting the probability of infection from one individual
         :param inducing_factors: dict of factors reflecting the influence of inducing stages
         """
         if not isinstance(start, Stage):
-            raise ValueError("start of Flow must be Stage")
-        if not isinstance(end, Stage):
-            raise ValueError("end of Flow must be Stage")
-        if start is end:
-            raise ValueError("start Stage cannot coincide with end Stage")
-        if not isinstance(flow_factor, Factor):
-            raise ValueError("flow_factor must be Factor")
-        if not isinstance(infect_factor, Factor):
-            raise ValueError("infect_factor must be Factor")
+            raise FlowError("start of Flow must be Stage")
+        if isinstance(end, Stage):
+            end = {end: 1}
+        elif isinstance(end, dict):
+            if any(not isinstance(k, Stage) or not isinstance(v, AnyFactor) for k, v in end.items()):
+                raise FlowError("the end stages dictionary must include stages as keys and factors as values")
+        else:
+            raise FlowError("end of Flow must be Stage or dict")
+        if any(e is start for e in end):
+            raise FlowError("start Stage cannot coincide with end Stage")
+        if not isinstance(flow_factor, AnyFactor):
+            raise FlowError("flow_factor must be Factor or number")
+        if not isinstance(infect_factor, AnyFactor):
+            raise FlowError("infect_factor must be Factor or number")
         if inducing_factors is None:
             inducing_factors = {}
         if not isinstance(inducing_factors, dict):
-            raise ValueError("inducing_factors must be dict")
+            raise FlowError("inducing_factors must be dict")
         if any(not isinstance(key, Stage) or not isinstance(val, Factor) for key, val in inducing_factors.items()):
-            raise ValueError("keys in inducing_factors must be Stage, values in inducing_factors must be Factor")
+            raise FlowError("keys in inducing_factors must be Stage, values in inducing_factors must be Factor")
 
         self._start = start
         self._end = end

@@ -1,5 +1,5 @@
 import unittest
-from factor import Factor
+from factor import Factor, FactorError
 
 
 class FactorTestCase(unittest.TestCase):
@@ -365,9 +365,9 @@ class FactorTestCase(unittest.TestCase):
         self.assertEqual(f(2), -4.45)
 
     def test_init_error(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(FactorError):
             alfa = Factor("factor")
-        with self.assertRaises(ValueError):
+        with self.assertRaises(FactorError):
             alfa = Factor({"q": 5.5})
-        with self.assertRaises(ValueError):
+        with self.assertRaises(FactorError):
             alfa = Factor({4: "q"})
