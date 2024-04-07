@@ -1,10 +1,10 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, Optional
+from typing import Sequence, Callable
 
 from factor import Factor, FactorError
-from stage import Stage
-from flow import Flow
-
+from stage import Stage, StageError
+from flow import Flow, FlowError
+from scipy.stats import poisson
 
 import csv
 import pandas as pd
@@ -19,8 +19,7 @@ class EpidemicModelError(Exception):
 class EpidemicModel:
     __len_float: int = 4
 
-    def __init__(self, stages: list[Stage], flows: list[Flow], simulation_time: int,
-                 imitation: bool = False):
+    def __init__(self, stages: Sequence[Stage], flows: Sequence[Flow]):
         try:
             """
             EpidemicModel - compartmental epidemic model
@@ -33,39 +32,30 @@ class EpidemicModel:
                 raise EpidemicModelError("all stages in model must be Stage")
             if any(not isinstance(fl, Flow) for fl in flows):
                 raise EpidemicModelError("all flows in model must be Flow")
-            if not isinstance(simulation_time, int):
-                raise EpidemicModelError("simulation_time must be Int")
 
-            self._stages: list[Stage] = stages
-            self._flows: list[Flow] = flows
-            self._factors: list[Factor] = list(set(fa for fl in self._flows for fa in fl.get_factors()))
-            self._simulation_time: int = simulation_time
-            # self.imitation: bool = imitation
+            self._stages: tuple[Stage] = tuple(stages)
+            self._flows: tuple[Flow] = tuple(flows)
+            self._factors: tuple[Factor] = tuple(set(fa for fl in self._flows for fa in fl.get_factors()))
+            fa_names = tuple(fa.name for fa in self._factors)
+            if len(set(fa_names)) < len(fa_names):
+                raise EpidemicModelError('all factors must have different names')
+
             self._result_table: pd.DataFrame = pd.DataFrame(columns=[st.name for st in self._stages])
             self._factors_table: pd.DataFrame = pd.DataFrame(columns=[fa.name for fa in self._factors])
             self._flows_table: pd.DataFrame = pd.DataFrame(columns=[str(fl) for fl in self._flows])
+
         except Exception as e:
             raise type(e)(f'In init model: {e}')
 
-    # @property
-    # def imitation(self):
-    #     return self._imitation
-    #
-    # @imitation.setter
-    # def imitation(self, value):
-    #     if not isinstance(value, bool):
-    #         raise ValueError("imitation for Flow must be bool")
-    #     if self._imitation != value:
-    #         for fl in self._flows:
-    #             fl.imitation = value
-
     def _model_step(self, step: int):
+        # print(f'step #{step} start')
         for fa in self._factors:
             fa.update(step)
             if fa.value < 0 or fa.value > 1:
                 raise FactorError(f"'{fa.name}' value {fa.value} not in [0, 1]")
 
         for fl in self._flows:
+            fl.check_end_factors()
             fl.calc_send_probability()
 
         for st in self._stages:
@@ -77,39 +67,67 @@ class EpidemicModel:
         for st in self._stages:
             st.apply_changes()
 
-        # self._result_table.append([step] + [st.num for st in self._stages])
         self._result_table.loc[step+1] = [st.num for st in self._stages]
         self._factors_table.loc[step] = [fa.value for fa in self._factors]
         self._flows_table.loc[step] = [fl.change for fl in self._flows]
-        # print(f"#{step}: {self._model_result[-1]}")
 
-    def start(self):
+    def start(self, time: int, stochastic_time=False, stochastic_changes=False, **kwargs):
         step = None
         try:
+            old_factor_values = {}
+            for f in self._factors:
+                if f.name in kwargs:
+                    old_factor_values[f] = f.get_fvalue()
+                    f.set_fvalue(kwargs[f.name])
+
+            self._result_table.drop(self._result_table.index, inplace=True)
+            self._factors_table.drop(self._factors_table.index, inplace=True)
+            self._flows_table.drop(self._factors_table.index, inplace=True)
+
             self._result_table.loc[0] = [st.num for st in self._stages]
+            method = Flow.STOCH_METHOD if stochastic_changes else Flow.TEOR_METHOD
+            for fl in self._flows:
+                fl.set_method(method)
 
-            for step in range(0, self._simulation_time + 1):
-                # print(f"step #{step}")
-                self._model_step(step)
-        except Exception as e:
-            raise type(e)(f'in step {step}: {e}')
+            if stochastic_time:
+                step = poisson.rvs(mu=1)
+                while step < time:
+                    self._model_step(step)
+                    step += poisson.rvs(mu=1)
+            else:
+                for step in range(0, time + 1):
+                    self._model_step(step)
 
-    def _print_table(self, table_df: pd.DataFrame):
+            for st in self._stages:
+                st.reset_num()
+
+            for fa in old_factor_values:
+                fa.set_fvalue(old_factor_values[fa])
+
+            return self.result_df
+
+        except (FlowError, FactorError, StageError) as e:
+            raise type(e)(f'in {'start' if step is None else 'step ' + step}: {e}')
+
+    def _get_table(self, table_df: pd.DataFrame):
         table = PrettyTable()
-        table.add_column('step', table_df.index)
+        table.add_column('step', table_df.index.tolist())
         for col in table_df:
-            table.add_column(col, table_df[col])
+            table.add_column(col, table_df[col].tolist())
         table.float_format = f".{self.__len_float}"
         print(table)
 
     def print_result_table(self):
-        self._print_table(self._result_table)
+        print(self._get_table(self._result_table))
 
     def print_factors_table(self):
-        self._print_table(self._factors_table)
+        print(self._get_table(self._factors_table))
 
     def print_flows_table(self):
-        self._print_table(self._flows_table)
+        print(self._get_table(self._flows_table))
+
+    def print_full_result(self):
+        print(self._get_table(self.full_df))
 
     @property
     def result_df(self):
@@ -123,15 +141,23 @@ class EpidemicModel:
     def flows_df(self):
         return self._flows_table.copy()
 
+    @property
+    def full_df(self):
+        df = pd.concat([self._result_table, self._flows_table, self._factors_table], axis=1)
+        df.sort_index(inplace=True)
+        return df
+
     def _write_table(self, filename: str, table: pd.DataFrame, floating_point='.', delimiter=','):
         table.to_csv(filename, sep=delimiter, decimal=floating_point,
                      float_format=f'%.{self.__len_float}f', index_label='step')
 
-    def write_all_result(self, model_name: str, floating_point='.', delimiter=','):
+    def write_all_result(self, model_name: str, floating_point='.', delimiter=',', path: str = ''):
+        if path and path[-1] != '\\':
+            path = path + '\\'
         if not isinstance(model_name, str) or len(model_name) == 0:
             raise EpidemicModelError('model name must be not empty str')
-        self._write_table(f'{model_name}_result.csv', self._result_table, floating_point, delimiter)
-        self._write_table(f'{model_name}_flows.csv', self._flows_table, floating_point, delimiter)
-        self._write_table(f'{model_name}_factors.csv', self._factors_table, floating_point, delimiter)
+        self._write_table(f'{path}{model_name}_result.csv', self._result_table, floating_point, delimiter)
+        self._write_table(f'{path}{model_name}_flows.csv', self._flows_table, floating_point, delimiter)
+        self._write_table(f'{path}{model_name}_factors.csv', self._factors_table, floating_point, delimiter)
 
 

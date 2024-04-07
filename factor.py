@@ -8,14 +8,16 @@ class FactorError(Exception):
 
 
 class Factor:
-    def __init__(self, value: int | float | Callable[[int], float], name: Optional[str] = None) -> None:
-        if name is not None and (not isinstance(name, str) or name == ''):
-            raise FactorError('invalid name for Factor, name must be not empty string')
-
+    def __init__(self, value: int | float | Callable[[int], float], *, name: Optional[str]) -> None:
+        if name is not None and (not isinstance(name, str) or name == '' or len(name.split()) != 1):
+            raise FactorError('invalid name for Factor, name must be not empty string without space')
         self._name: Optional[str] = name
         self._value: Optional[float] = None
         self._func: Optional[Callable[[int], float]] = None
 
+        self.set_fvalue(value)
+
+    def set_fvalue(self, value: int | float | Callable[[int], float]):
         match value:
             case int(value) | float(value):
                 self._value = float(value)
@@ -25,12 +27,16 @@ class Factor:
             case _:
                 raise FactorError('invalid value for Factor, value can be int | float | Callable[[int], float]')
 
+    def get_fvalue(self):
+        if self._func is None:
+            return self.value
+        return self.value
+
     @staticmethod
     def may_be_factor(value):
         return isinstance(value, (int, float)) or callable(value)
 
     def update(self, time: int):
-        print(f'{time}: update', self)
         if self._func is not None:
             try:
                 res = self._func(time)

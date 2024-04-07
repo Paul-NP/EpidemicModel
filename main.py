@@ -5,27 +5,22 @@ from factor import Factor
 import matplotlib.pyplot as plt
 import math
 
-def experiment_1():
+
+def sirs():
     s = Stage("S", 100)
     i = Stage("I", 1)
     r = Stage("R", 0)
-    d = Stage("D", 0)
 
-    # beta = Factor(Factor.func_by_keyframes({0: 0.004, 50: 0.001}), 'beta')
-    # beta = Factor(lambda x: (math.sin(x / 10) + 1) / 40, 'beta')
-    # gamma = Factor(0, 'gama')
     beta = 0.004
     gama = 0.1
     delta = 0.01
-    # death_rate = 0.1
 
     si = Flow(s, i, flow_factor=beta, inducing={i: 1})
     ir = Flow(i, r, flow_factor=gama)
-    # ird = Flow(i, {r: 1 - death_rate, d: death_rate}, flow_factor=gamma)
     rs = Flow(r, s, flow_factor=delta)
 
-    model = EpidemicModel([s, i, r], [si, rs, ir], 200)
-    model.start()
+    model = EpidemicModel([s, i, r], [si, rs, ir])
+    model.start(300)
 
     model.print_result_table()
     model.print_flows_table()
@@ -33,9 +28,44 @@ def experiment_1():
 
     model.write_all_result('SIRS_1')
 
-    # model.factors_df.plot()
     model.flows_df.plot()
     model.result_df.plot()
+    plt.show()
+
+
+def sir():
+    s = Stage('S', 1000)
+    i = Stage('I', 1)
+    r = Stage('R')
+
+    beta = Factor(0.004, name='beta')
+    gama = Factor(0.1, name='gama')
+
+    si = Flow(s, i, beta, inducing=i)
+    ir = Flow(i, r, gama)
+
+    model = EpidemicModel((s, i, r), (si, ir))
+
+    for i in range(10):
+        result = model.start(500, stochastic_time=True, stochastic_changes=True, beta=0.00002, gama=0.015)
+        plt.plot(result['I'], label=f'result_{i}')
+    result_teor = model.start(500, beta=0.00002, gama=0.015)
+    plt.plot(result_teor['I'], label='result_teor')
+    # model.print_full_result()
+    # model.result_df.plot()
+    # model.print_result_table()
+    # model.print_flows_table()
+    # model.print_factors_table()
+    # result1.plot()
+
+    # result2 = model.start(200, beta=0.001, gama=0.13)
+    # result3 = model.start(200, beta=0.001, gama=0.16)
+
+
+
+    # plt.plot(result3['I'], label='result3')
+    # model.print_result_table()
+    plt.legend()
     plt.show()
 
 
@@ -82,4 +112,4 @@ def experiment_2():
 
 
 if __name__ == '__main__':
-    experiment_1()
+    sir()

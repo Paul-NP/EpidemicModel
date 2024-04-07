@@ -26,6 +26,7 @@ class Stage:
 
         self._name: str = name
         self._current_num: float = float(start_num)
+        self._start_num: float = self._current_num
         self._changes: list[float | int] = []
         self._probability_out: dict[Flow, float] = {}
 
@@ -71,6 +72,9 @@ class Stage:
     @property
     def num(self) -> float:
         return self._current_num
+
+    def reset_num(self):
+        self._current_num = self._start_num
 
     def __str__(self) -> str:
         return f"Stage({self._name})"

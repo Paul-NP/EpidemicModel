@@ -4,12 +4,14 @@ from types import FunctionType
 from stage import Stage
 from factor import Factor
 
+from scipy.stats import poisson
 from math import prod
 
 from random import random
 
 
 AnyFactor: TypeAlias = int | float | Callable[[int], float] | Factor
+
 
 class FlowError(Exception):
     pass
@@ -18,8 +20,11 @@ class FlowError(Exception):
 class Flow:
     _accuracy = 0.00001
 
+    TEOR_METHOD = 0
+    STOCH_METHOD = 1
+
     def __init__(self, start: Stage, end: Stage | dict[Stage, AnyFactor], flow_factor: AnyFactor = 1,
-                 inducing: dict[Stage, AnyFactor] = None):
+                 inducing: Stage | dict[Stage, AnyFactor] = None):
         """
         Flow adds the changes it makes to the change lists of the corresponding Stages.
         The flow value is calculated based on parameter 'num' of the stages involved and
@@ -32,14 +37,17 @@ class Flow:
         if not isinstance(start, Stage):
             raise FlowError("start of Flow must be Stage")
         if isinstance(end, Stage):
-            end = {end: Factor(1)}
+            end = {end: Factor(1, name=None)}
         elif isinstance(end, dict):
             for k, v in end.items():
                 if not isinstance(k, Stage):
                     raise FlowError("the end stages dictionary must include Stages as keys")
                 elif Factor.may_be_factor(v):
-                    end[k] = Factor(v)
+                    end[k] = Factor(v, name=None)
                 elif isinstance(v, Factor):
+                    if v.name is None:
+                        raise FlowError("Factors created manually must have names,"
+                                        "one factor in end dict is unnamed")
                     end[k] = v
                 else:
                     raise FlowError(f"the end stages dictionary must include {AnyFactor} as values")
@@ -48,9 +56,11 @@ class Flow:
         if any(e is start for e in end):
             raise FlowError("start Stage cannot coincide with end Stage")
         if Factor.may_be_factor(flow_factor):
-            flow_factor = Factor(flow_factor)
+            flow_factor = Factor(flow_factor, name=None)
         elif not isinstance(flow_factor, Factor):
             raise FlowError(f"flow_factor must be {AnyFactor}")
+        elif flow_factor.name is None:
+            raise FlowError("Factors created manually must have names, flow_factor is unnamed")
 
         self._start: Stage = start
         self._end_dict: dict[Stage, Factor] = end
@@ -58,31 +68,44 @@ class Flow:
 
         if inducing is None:
             inducing = {}
-        if not isinstance(inducing, dict):
-            raise FlowError("inducing_factors must be dict")
+        elif isinstance(inducing, Stage):
+            inducing = {inducing: 1}
+        elif not isinstance(inducing, dict):
+            raise FlowError("inducing must be dict[Stage, <factor>] or Stage")
 
         for k, v in inducing.items():
             if not isinstance(k, Stage):
-                raise FlowError("keys in inducing_factors must be Stage")
+                raise FlowError("keys in inducing must be Stage")
             elif Factor.may_be_factor(v):
-                inducing[k] = Factor(v)
+                inducing[k] = Factor(v, name=None)
             elif not isinstance(v, Factor):
                 raise FlowError(f"the inducing factors dictionary must include {AnyFactor} as values")
+            elif v.name is None:
+                raise FlowError("Factors created manually must have names, one of inducing factors is unnamed")
 
         self._inducing_factors: dict[Stage, Factor] = inducing
         self._change_in: float = 0
+        self._submit_func: Callable = self._teor_submit
 
         self._rename_factors()
 
+    def set_method(self, method: int):
+        if method == self.TEOR_METHOD:
+            self._submit_func = self._teor_submit
+        elif method == self.STOCH_METHOD:
+            self._submit_func = self._stoch_submit
+        else:
+            raise FlowError(f'flow have not calculation method = {method}')
+
     def _rename_factors(self):
         if self._flow_factor.name is None:
-            self._flow_factor.name = f'{self} - flow factor'
+            self._flow_factor.name = f'{self}-f'
         for s, f in self._inducing_factors.items():
             if f.name is None:
-                f.name = f'{self} - ind factor by {s}'
+                f.name = f'{self}-if[{s.name}]'
         for s, f in self._end_dict.items():
             if f.name is None:
-                f.name = f'{self} - end factor to {s}'
+                f.name = f'{self}-ef[{s.name}]'
 
     def _calc_flow_probability(self):
         if self._inducing_factors:
@@ -100,13 +123,32 @@ class Flow:
         self._change_in = value
 
     def submit_changes(self):
-        self._start.add_change(-self._change_in)
-        s = 0
-        for end, f in self._end_dict.items():
-            s += f.value
-            end.add_change(f.value * self._change_in)
+        self._submit_func()
+
+    def check_end_factors(self):
+        s = sum(f.value for f in self._end_dict.values())
         if abs(s - 1) > self._accuracy:
             raise FlowError(f'{self} sum of out probabilities not equal 1 ({s})')
+
+    def _teor_submit(self):
+        self._start.add_change(-self._change_in)
+        for end, f in self._end_dict.items():
+            end.add_change(f.value * self._change_in)
+
+    def _stoch_submit(self):
+        sum_ch = 0
+        for end, f in self._end_dict.items():
+            ch = poisson.rvs(mu=f.value * self._change_in)
+            sum_ch_new = sum_ch + ch
+            if sum_ch_new > self._start.num:
+                end.add_change(self._start.num - sum_ch)
+                sum_ch = self._start.num
+                break
+            else:
+                sum_ch = sum_ch_new
+                end.add_change(ch)
+
+        self._start.add_change(-sum_ch)
 
     @property
     def change(self) -> float:
@@ -123,26 +165,7 @@ class Flow:
 
     def __str__(self) -> str:
         ends = ','.join([e.name for e in self._end_dict.keys()])
-        return f"Flow({self._start.name}>{ends})"
+        return f"F({self._start.name}>{ends})"
 
     def __repr__(self) -> str:
         return self.__str__()
-
-
-# st1 = Stage("S", 100)
-# st2 = Stage("I", 1)
-# print(repr(st1), repr(st2))
-#
-# beta = Factor(0.43, "beta")
-# gama = Factor(0.1, "gama")
-#
-# fl = Flow(st1, st2, infect_factor=beta, inducing_factors={st2: gama})
-# fl.imitation = True
-# print(repr(fl))
-# beta(1)
-# gama(1)
-#
-# fl.make_changes()
-# st1.apply_changes()
-# st2.apply_changes()
-# print(repr(st1), repr(st2))
