@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Callable, TypeAlias, Optional
+from typing import Callable, TypeAlias, Optional, Any, Literal
 from types import FunctionType
 from stage import Stage
 from factor import Factor
@@ -9,8 +9,8 @@ from math import prod
 
 from random import random
 
-
 AnyFactor: TypeAlias = int | float | Callable[[int], float] | Factor
+FlowMethod: TypeAlias = int
 
 
 class FlowError(Exception):
@@ -20,76 +20,68 @@ class FlowError(Exception):
 class Flow:
     _accuracy = 0.00001
 
-    TEOR_METHOD = 0
-    STOCH_METHOD = 1
+    TEOR_METHOD: FlowMethod = 0
+    STOCH_METHOD: FlowMethod = 1
 
-    def __init__(self, start: Stage, end: Stage | dict[Stage, AnyFactor], flow_factor: AnyFactor = 1,
-                 inducing: Stage | dict[Stage, AnyFactor] = None):
-        """
-        Flow adds the changes it makes to the change lists of the corresponding Stages.
-        The flow value is calculated based on parameter 'num' of the stages involved and
-        parameter 'value' of the factors involved
-        :param start: start Stage of Flow
-        :param end: dict of factors
-        :param flow_factor: the factor used in calculating the probability at the end or factor for not inducing Flow
-        :param inducing: dict of factors reflecting the influence of inducing stages
-        """
+    @staticmethod
+    def __check_factors_dict(factors: dict, content: str):
+        if not factors:
+            raise FlowError(f'{content} dictionary is empty')
+        for k, v in factors.items():
+            if not isinstance(k, Stage):
+                raise FlowError(f"{content} dictionary must include Stages as keys")
+            elif Factor.may_be_factor(v):
+                factors[k] = Factor(v, name=None)
+            elif isinstance(v, Factor):
+                if v.name is None:
+                    raise FlowError(f"Factors created manually must have names,"
+                                    f"one factor in {content} is unnamed")
+                factors[k] = v
+            else:
+                raise FlowError(f"{content} dictionary must include {AnyFactor} as values")
+
+    def __init__(self, start: Stage, end: Stage | dict[Stage, AnyFactor],
+                 flow_factor: AnyFactor = 1, inducing_factors: Stage | dict[Stage, AnyFactor] = None):
         if not isinstance(start, Stage):
             raise FlowError("start of Flow must be Stage")
         if isinstance(end, Stage):
             end = {end: Factor(1, name=None)}
         elif isinstance(end, dict):
-            for k, v in end.items():
-                if not isinstance(k, Stage):
-                    raise FlowError("the end stages dictionary must include Stages as keys")
-                elif Factor.may_be_factor(v):
-                    end[k] = Factor(v, name=None)
-                elif isinstance(v, Factor):
-                    if v.name is None:
-                        raise FlowError("Factors created manually must have names,"
-                                        "one factor in end dict is unnamed")
-                    end[k] = v
-                else:
-                    raise FlowError(f"the end stages dictionary must include {AnyFactor} as values")
+            self.__check_factors_dict(end, 'end')
         else:
-            raise FlowError("end of Flow must be Stage or dict[Stage, <factor>]")
+            raise FlowError(f"end of Flow must be Stage or dict[Stage, {AnyFactor}]")
         if any(e is start for e in end):
             raise FlowError("start Stage cannot coincide with end Stage")
+
         if Factor.may_be_factor(flow_factor):
             flow_factor = Factor(flow_factor, name=None)
-        elif not isinstance(flow_factor, Factor):
-            raise FlowError(f"flow_factor must be {AnyFactor}")
-        elif flow_factor.name is None:
-            raise FlowError("Factors created manually must have names, flow_factor is unnamed")
+        elif isinstance(flow_factor, Factor):
+            if flow_factor.name is None:
+                raise FlowError(f"Factors created manually must have names,"
+                                f"flow_factor is unnamed")
+        else:
+            raise FlowError(f'flow_factor must be {AnyFactor}')
+
+        if isinstance(inducing_factors, dict):
+            self.__check_factors_dict(inducing_factors, 'factors')
+        elif isinstance(inducing_factors, Stage):
+            inducing_factors = {inducing_factors: Factor(1, name=None)}
+        elif inducing_factors is None:
+            inducing_factors = {}
+        else:
+            raise FlowError(f'inducing must be {Stage} or dict[Stage, {AnyFactor}]')
 
         self._start: Stage = start
         self._end_dict: dict[Stage, Factor] = end
-        self._flow_factor: Factor = flow_factor
+        self._flow_factor: Optional[Factor] = flow_factor
 
-        if inducing is None:
-            inducing = {}
-        elif isinstance(inducing, Stage):
-            inducing = {inducing: 1}
-        elif not isinstance(inducing, dict):
-            raise FlowError("inducing must be dict[Stage, <factor>] or Stage")
-
-        for k, v in inducing.items():
-            if not isinstance(k, Stage):
-                raise FlowError("keys in inducing must be Stage")
-            elif Factor.may_be_factor(v):
-                inducing[k] = Factor(v, name=None)
-            elif not isinstance(v, Factor):
-                raise FlowError(f"the inducing factors dictionary must include {AnyFactor} as values")
-            elif v.name is None:
-                raise FlowError("Factors created manually must have names, one of inducing factors is unnamed")
-
-        self._inducing_factors: dict[Stage, Factor] = inducing
+        self._inducing_factors: dict[Stage, Factor] = inducing_factors
         self._change_in: float = 0
         self._submit_func: Callable = self._teor_submit
 
         self._rename_factors()
 
-    def set_method(self, method: int):
+    def set_method(self, method: FlowMethod):
         if method == self.TEOR_METHOD:
             self._submit_func = self._teor_submit
         elif method == self.STOCH_METHOD:
@@ -98,22 +90,22 @@ class Flow:
             raise FlowError(f'flow have not calculation method = {method}')
 
     def _rename_factors(self):
-        if self._flow_factor.name is None:
+        if self._flow_factor is not None and self._flow_factor.name is None:
             self._flow_factor.name = f'{self}-f'
         for s, f in self._inducing_factors.items():
             if f.name is None:
-                f.name = f'{self}-if[{s.name}]'
+                f.name = f'if[{s.name}]-{self}'
         for s, f in self._end_dict.items():
             if f.name is None:
-                f.name = f'{self}-ef[{s.name}]'
+                f.name = f'ef[{s.name}]-{self}'
 
     def _calc_flow_probability(self):
         if self._inducing_factors:
-            not_infect_pr = prod((1 - self._flow_factor.value * ind_factor.value) ** ind.num
-                                 for ind, ind_factor in self._inducing_factors.items())
-            self._flow_probability = 1 - not_infect_pr
+            flow_probability = 1 - prod((1 - self._flow_factor.value * ind_factor.value) ** ind.num
+                                        for ind, ind_factor in self._inducing_factors.items())
         else:
-            self._flow_probability = self._flow_factor.value
+            flow_probability = self._flow_factor.value
+        self._flow_probability = flow_probability
 
     def calc_send_probability(self):
         self._calc_flow_probability()
@@ -123,7 +115,7 @@ class Flow:
         self._change_in = value
 
     def submit_changes(self):
-        self._submit_func()
+        return self._submit_func()
 
     def check_end_factors(self):
         s = sum(f.value for f in self._end_dict.values())
@@ -134,6 +126,7 @@ class Flow:
         self._start.add_change(-self._change_in)
         for end, f in self._end_dict.items():
             end.add_change(f.value * self._change_in)
+        return self._change_in
 
     def _stoch_submit(self):
         sum_ch = 0
@@ -149,6 +142,7 @@ class Flow:
                 end.add_change(ch)
 
         self._start.add_change(-sum_ch)
+        return sum_ch
 
     @property
     def change(self) -> float:

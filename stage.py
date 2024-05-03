@@ -73,6 +73,11 @@ class Stage:
     def num(self) -> float:
         return self._current_num
 
+    @num.setter
+    def num(self, value: int):
+        self._start_num = value
+        self.reset_num()
+
     def reset_num(self):
         self._current_num = self._start_num
 
