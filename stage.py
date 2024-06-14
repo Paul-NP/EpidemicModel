@@ -13,7 +13,7 @@ class StageError(Exception):
 
 class Stage:
     __MIN_NAME_LEN: int = 1
-    __MAX_NAME_LEN: int = 4
+    __MAX_NAME_LEN: int = 20
     __FLOAT_LEN: int = 2
 
     def __init__(self, name: str, start_num: float = 0):

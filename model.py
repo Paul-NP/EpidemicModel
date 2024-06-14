@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Sequence, Callable
+from typing import Sequence, Callable, Literal
 
 import numpy as np
 
@@ -10,6 +10,7 @@ from scipy.stats import poisson
 
 import csv
 import pandas as pd
+import json
 import matplotlib.pyplot as plt
 from prettytable import PrettyTable
 
@@ -20,6 +21,9 @@ class EpidemicModelError(Exception):
 
 class EpidemicModel:
     __len_float: int = 4
+
+    __struct_versions = ['kk_2024']
+    __struct_versions_types = Literal['kk_2024']
 
     def __init__(self, stages: Sequence[Stage], flows: Sequence[Flow]):
         try:
@@ -231,15 +235,66 @@ class EpidemicModel:
             case _:
                 raise EpidemicModelError('cannot create sir model with taken parameters')
 
-    def confidence_interval(self, results, p_value: float = 0.9):
-        intervals = {}
-        percent = int(p_value * 100)
-        percent_ = 100 - percent
-        for r in results:
-            low = np.percentile(results[r], percent_, axis=1)
-            upp = np.percentile(results[r], percent, axis=1)
-            intervals[r] = pd.DataFrame({'l': low, 'u': upp}, index=results[r].index)
-        return intervals
+    # def confidence_interval(self, results, p_value: float = 0.9):
+    #     intervals = {}
+    #     percent = int(p_value * 100)
+    #     percent_ = 100 - percent
+    #     for r in results:
+    #         low = np.percentile(results[r], percent_, axis=1)
+    #         upp = np.percentile(results[r], percent, axis=1)
+    #         intervals[r] = pd.DataFrame({'l': low, 'u': upp}, index=results[r].index)
+    #     return intervals
+
+    def to_json(self, struct_version: __struct_versions_types) -> str:
+        generators = {'kk_2024': self.__to_json_kk_2024}
+        if struct_version in generators:
+            return generators[struct_version]()
+        else:
+            raise EpidemicModelError('unknown json-structure version')
+
+    @classmethod
+    def from_json(cls, json_string: str, struct_version: __struct_versions_types) -> EpidemicModel:
+        parsers = {'kk_2024': cls.__from_json_kk_2024}
+
+        if struct_version in parsers:
+            return parsers[struct_version](json_string)
+        else:
+            raise EpidemicModelError('unknown json-structure version')
+
+    def __to_json_kk_2024(self) -> str:
+        pass
+
+    @classmethod
+    def __from_json_kk_2024(cls, json_string: str) -> EpidemicModel:
+        structure = json.loads(json_string)
+        try:
+            raw_stages = structure['compartments']
+            raw_flows = structure['flows']
+
+            stages = [Stage(st['name'], st['population']) for st in raw_stages]
+            stages_dict = {st.name: st for st in stages}
+
+            flows = []
+            for r_flow in raw_flows:
+                start = stages_dict[r_flow['from']]
+
+                end_dict = {stages_dict[end['name']]: end['coef'] for end in r_flow['to']}
+                if 'induction' in r_flow:
+                    ind_dict = {stages_dict[ind['name']]: ind['coef'] for ind in r_flow['induction']}
+                else:
+                    ind_dict = None
+                fl_factor = r_flow['coef']
+                flows.append(Flow(start, end_dict, fl_factor, ind_dict))
+
+            model = EpidemicModel(stages, flows)
+            return model
+
+        except Exception as e:
+            e.add_note('incorrect json structure in version "kk_2024"')
+            raise e
+
+
+
 
 
 
