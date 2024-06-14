@@ -1,4 +1,5 @@
 Пакет для эпидемиологического моделирования на основе компартментального моделирования.
+>>> from emodel import EpidemicModel
 
 Создание экземпляра модели из содержимого json файла
 >>> m = EpidemicModel.from_json(json_content, struct_version='kk_2024')
