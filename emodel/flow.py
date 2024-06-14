@@ -1,13 +1,11 @@
 from __future__ import annotations
-from typing import Callable, TypeAlias, Optional, Any, Literal
-from types import FunctionType
+from typing import Callable, TypeAlias, Optional
 from stage import Stage
-from factor import Factor
+from .factor import Factor
 
 from scipy.stats import poisson
 from math import prod
 
-from random import random
 
 AnyFactor: TypeAlias = int | float | Callable[[int], float] | Factor
 FlowMethod: TypeAlias = int

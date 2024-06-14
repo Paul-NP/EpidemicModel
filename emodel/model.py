@@ -1,18 +1,15 @@
 from __future__ import annotations
-from typing import Sequence, Callable, Literal
+from typing import Sequence, Literal
 
-import numpy as np
+from .factor import Factor, FactorError
+from .stage import Stage, StageError
+from .flow import Flow, FlowError
 
-from factor import Factor, FactorError
-from stage import Stage, StageError
-from flow import Flow, FlowError
-from scipy.stats import poisson
-
-import csv
 import pandas as pd
 import json
-import matplotlib.pyplot as plt
+import numpy as np
 from prettytable import PrettyTable
+from scipy.stats import poisson
 
 
 class EpidemicModelError(Exception):
