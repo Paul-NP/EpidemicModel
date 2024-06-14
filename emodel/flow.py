@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Callable, TypeAlias, Optional
-from stage import Stage
+
+from .stage import Stage
 from .factor import Factor
 
 from scipy.stats import poisson
