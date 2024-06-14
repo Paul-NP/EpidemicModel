@@ -13,6 +13,3 @@ def modelling_from_json(filename_json: str, filename_csv: str, time: int):
         e_model = EpidemicModel.from_json(json_content, struct_version='kk_2024')
         result = e_model.start(time)
         result.to_csv(filename_csv, sep=',')
-
-
-modelling_from_json('temp/test_model.json', 'temp/test_result.csv', 200)
