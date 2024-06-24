@@ -29,8 +29,8 @@ class Factor:
 
     def get_fvalue(self):
         if self._func is None:
-            return self.value
-        return self.value
+            return self._func
+        return self._value
 
     @staticmethod
     def may_be_factor(value):
