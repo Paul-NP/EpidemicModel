@@ -40,7 +40,8 @@ class Flow:
                 raise FlowError(f"{content} dictionary must include {AnyFactor} as values")
 
     def __init__(self, start: Stage, end: Stage | dict[Stage, AnyFactor],
-                 flow_factor: AnyFactor = 1, inducing_factors: Stage | dict[Stage, AnyFactor] = None):
+                 flow_factor: AnyFactor = 1, inducing_factors: Stage | dict[Stage, AnyFactor] = None,
+                 population_size: Optional[int] = None):
         if not isinstance(start, Stage):
             raise FlowError("start of Flow must be Stage")
         if isinstance(end, Stage):
@@ -70,6 +71,9 @@ class Flow:
         else:
             raise FlowError(f'inducing must be {Stage} or dict[Stage, {AnyFactor}]')
 
+        self._population_size: Optional[int] = None
+        self.set_population_size(population_size)
+
         self._start: Stage = start
         self._end_dict: dict[Stage, Factor] = end
         self._flow_factor: Optional[Factor] = flow_factor
@@ -79,6 +83,12 @@ class Flow:
         self._submit_func: Callable = self._teor_submit
 
         self._rename_factors()
+
+    def set_population_size(self, population_size: Optional[int | float]):
+        if isinstance(population_size, (int, float)):
+            self._population_size: Optional[int | float] = population_size
+        else:
+            self._population_size: Optional[int | float] = None
 
     def set_method(self, method: FlowMethod):
         if method == self.TEOR_METHOD:
@@ -100,7 +110,10 @@ class Flow:
 
     def _calc_flow_probability(self):
         if self._inducing_factors:
-            flow_probability = 1 - prod((1 - self._flow_factor.value * ind_factor.value) ** ind.num
+            flow_factor = self._flow_factor.value
+            if self._population_size is not None:
+                flow_factor /= self._population_size
+            flow_probability = 1 - prod((1 - flow_factor * ind_factor.value) ** ind.num
                                         for ind, ind_factor in self._inducing_factors.items())
         else:
             flow_probability = self._flow_factor.value

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Sequence, Literal
+from typing import Sequence, Literal, Optional
 
 from .factor import Factor, FactorError
 from .stage import Stage, StageError
@@ -77,9 +77,21 @@ class EpidemicModel:
         old_flows = self._flows_df.loc[step] if step in self._flows_df.index else 0
         self._flows_df.loc[step] = old_flows + np.array(fl_changes)
 
-    def start(self, time: int, stochastic_time=False, stochastic_changes=False, **kwargs):
+    def _set_population_size_flows(self, population_size: Optional[int | float]):
+        for flow in self._flows:
+            flow.set_population_size(population_size)
+
+    def start(self, time: int, stochastic_time=False, stochastic_changes=False,
+              divide_by_population_size=True, **kwargs):
         step = None
         try:
+            if divide_by_population_size:
+                population_size = sum(st.num for st in self._stages)
+                print(f'{population_size=}')
+                self._set_population_size_flows(population_size)
+            else:
+                self._set_population_size_flows(None)
+
             old_factor_values = self.set_factors(**kwargs)
 
             self._result_df.drop(self._result_df.index, inplace=True)
