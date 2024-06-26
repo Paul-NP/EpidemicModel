@@ -1,6 +1,6 @@
 import unittest
-from factor import Factor
-from stage import Stage
+from emodel import Factor
+from emodel import Stage
 
 
 class StageTestCase(unittest.TestCase):

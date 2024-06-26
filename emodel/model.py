@@ -126,7 +126,7 @@ class EpidemicModel:
             return self.result_df
 
         except (FlowError, FactorError, StageError) as e:
-            raise type(e)(f'in {'start' if step is None else 'step ' + str(step)}: {e}')
+            raise type(e)(f'in {"start" if step is None else "step " + str(step)}: {e}')
 
     def _get_table(self, table_df: pd.DataFrame):
         table = PrettyTable()
