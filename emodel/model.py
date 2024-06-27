@@ -87,7 +87,6 @@ class EpidemicModel:
         try:
             if divide_by_population_size:
                 population_size = sum(st.num for st in self._stages)
-                print(f'{population_size=}')
                 self._set_population_size_flows(population_size)
             else:
                 self._set_population_size_flows(None)

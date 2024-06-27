@@ -31,25 +31,19 @@ result_df.plot(title='SIR', ylabel='population', xlabel='time')
 plt.show()
 ```
 
-![sir example](documentation/images/sir_example.png)
+`start(70)` - the start method, which takes the simulation duration, returns a pandas.DataFrame with the simulation results.
+
+### Simulation result
+
+![sir example](https://raw.githubusercontent.com/Paul-NP/EpidemicModel/master/documentation/images/sir_example.png)
 
 ## Load a model from json.
-
-```python
-m = EpidemicModel.from_json(json_content, struct_version='kk_2024')
-```
-
-`'kk_2024'` - model description protocol (Kireev-Kuldarev-2024)
-
-Getting results. The start method, which takes the simulation duration, returns a pandas.DataFrame with the simulation results.
-
-```python
-result = m.start(100)
-```
 
 An example of a modeling function from a file with a json structure and saving the results to a csv table.
 
 ```python
+from emodel import EpidemicModel
+
 def modelling_from_json(filename_json: str, filename_csv: str, time: int):
 	with open(filename_json, encoding='utf8') as file:
 		json_content = file.read()
@@ -57,3 +51,5 @@ def modelling_from_json(filename_json: str, filename_csv: str, time: int):
 		result = e_model.start(time)
 		result.to_csv(filename_csv, sep=',')
 ```
+
+`'kk_2024'` - model description protocol (Kireev-Kuldarev-2024)
