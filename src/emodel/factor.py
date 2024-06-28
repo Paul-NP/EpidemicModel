@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Callable, Optional
+from typing import Callable, Optional, Literal, Any
 from types import FunctionType
 
 
@@ -8,11 +8,11 @@ class FactorError(Exception):
 
 
 class Factor:
-    def __init__(self, value: int | float | Callable[[int], float], *, name: Optional[str]) -> None:
+    def __init__(self, value: int | float | Callable[[int], float], *, name: Optional[str]):
         if name is not None and (not isinstance(name, str) or name == '' or len(name.split()) != 1):
             raise FactorError('invalid name for Factor, name must be not empty string without space')
         self._name: str = '' if name is None else name
-        self._value: Optional[float] = None
+        self._value: float = 0
         self._func: Optional[Callable[[int], float]] = None
 
         self.set_fvalue(value)
@@ -23,17 +23,18 @@ class Factor:
                 self._value = float(value)
                 self._func = None
             case FunctionType() as func:
+                self._value = func(0)
                 self._func = func
             case _:
                 raise FactorError('invalid value for Factor, value can be int | float | Callable[[int], float]')
 
-    def get_fvalue(self):
+    def get_fvalue(self) -> Callable[[int], float] | float:
         if self._func is not None:
             return self._func
         return self._value
 
     @staticmethod
-    def may_be_factor(value):
+    def may_be_factor(value: Any) -> bool:
         return isinstance(value, (int, float)) or callable(value)
 
     def update(self, time: int):
@@ -45,7 +46,7 @@ class Factor:
             self._value = res
 
     @property
-    def value(self) -> Optional[float]:
+    def value(self) -> float:
         return self._value
 
     @property
@@ -62,11 +63,12 @@ class Factor:
             raise FactorError('invalid name for Factor, name must be not empty string')
         self._name = name
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self._name
 
     @staticmethod
-    def func_by_keyframes(keyframes: dict[int, float | int], continuation_mode='cont') -> Callable[[int], float]:
+    def func_by_keyframes(keyframes: dict[int, float | int],
+                          continuation_mode: str = 'cont') -> Callable[[int], float]:
         """
         creates functions based on keyframes
         :param keyframes: factor values by key points

@@ -1,17 +1,16 @@
 from __future__ import annotations
-from typing import Callable, TypeAlias, Optional
+from typing import Callable, TypeAlias, Optional, Union
 
 from .stage import Stage
 from .factor import Factor
 
-from scipy.stats import poisson
+from scipy.stats import poisson  # type: ignore
 from math import prod
 
 
-AnySourceFactor: TypeAlias = int | float | Callable[[int], float]
+AnySourceFactor: TypeAlias = Union[int, float, Callable[[int], float]]
 AnyFactor: TypeAlias = AnySourceFactor | Factor
-StageFactorDict: TypeAlias = (dict[Stage, int] | dict[Stage, float] | dict[Stage, Factor] |
-                              dict[Stage, Callable[[int], float]])
+StageFactorDict: TypeAlias = dict[Stage, AnyFactor]
 FlowMethod: TypeAlias = int
 
 
@@ -26,33 +25,39 @@ class Flow:
     STOCH_METHOD: FlowMethod = 1
 
     @staticmethod
-    def __check_factors_dict(factors: dict, content: str):
+    def __check_factors_dict(factors: StageFactorDict, content: str) -> dict[Stage, Factor]:
         if not factors:
             raise FlowError(f'{content} dictionary is empty')
+        new_factors = {}
         for k, v in factors.items():
             if not isinstance(k, Stage):
                 raise FlowError(f"{content} dictionary must include Stages as keys")
-            elif Factor.may_be_factor(v):
-                factors[k] = Factor(v, name=None)
             elif isinstance(v, Factor):
                 if not v.name:
                     raise FlowError(f"Factors created manually must have names,"
                                     f"one factor in {content} is unnamed")
-                factors[k] = v
+
+                new_factors[k] = v
+            elif Factor.may_be_factor(v):
+                new_factors[k] = Factor(v, name=None)
             else:
                 raise FlowError(f"{content} dictionary must include {AnyFactor} as values")
+        return new_factors
 
     def __init__(self, start: Stage, end: Stage | StageFactorDict,
                  flow_factor: AnyFactor = 1, inducing_factors: Optional[Stage | StageFactorDict] = None):
+
         if not isinstance(start, Stage):
             raise FlowError("start of Flow must be Stage")
+
         if isinstance(end, Stage):
-            end = {end: Factor(1, name=None)}
+            end_dict = {end: Factor(1, name=None)}
         elif isinstance(end, dict):
-            self.__check_factors_dict(end, 'end')
+            end_dict = self.__check_factors_dict(end, 'end')
         else:
             raise FlowError(f"end of Flow must be Stage or dict[Stage, {AnyFactor}]")
-        if any(e is start for e in end):
+
+        if any(e is start for e in end_dict):
             raise FlowError("start Stage cannot coincide with end Stage")
 
         if isinstance(flow_factor, Factor):
@@ -61,34 +66,33 @@ class Flow:
                                 f"flow_factor is unnamed")
         elif Factor.may_be_factor(flow_factor):
             flow_factor = Factor(flow_factor, name=None)
-
         else:
             raise FlowError(f'flow_factor must be {AnyFactor}')
 
-        if isinstance(inducing_factors, dict):
-            self.__check_factors_dict(inducing_factors, 'factors')
-        elif isinstance(inducing_factors, Stage):
-            inducing_factors = {inducing_factors: Factor(1, name=None)}
+        if isinstance(inducing_factors, Stage):
+            inducing_dict = {inducing_factors: Factor(1, name=None)}
+        elif isinstance(inducing_factors, dict):
+            inducing_dict = self.__check_factors_dict(inducing_factors, 'factors')
         elif inducing_factors is None:
-            inducing_factors = {}
+            inducing_dict = {}
         else:
             raise FlowError(f'inducing must be {Stage} or dict[Stage, {AnyFactor}]')
 
-        self._population_size: Optional[int] = None
+        self._population_size: Optional[float | int] = None
         self._relativity_factors: bool = False
 
         self._start: Stage = start
-        self._end_dict: dict[Stage, Factor] = end
-        self._flow_factor: Optional[Factor] = flow_factor
+        self._end_dict: dict[Stage, Factor] = end_dict
+        self._flow_factor: Factor = flow_factor
 
-        self._inducing_factors: dict[Stage, Factor] = inducing_factors
+        self._inducing_factors: dict[Stage, Factor] = inducing_dict
         self._change_in: float = 0
         self._submit_func: Callable = self._teor_submit
 
         self._rename_factors()
 
     def set_population_size(self, population_size: int | float):
-        self._population_size: Optional[int | float] = population_size
+        self._population_size = population_size
 
     def set_relativity_factors(self, relativity: bool):
         self._relativity_factors = relativity

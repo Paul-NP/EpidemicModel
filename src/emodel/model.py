@@ -3,13 +3,13 @@ from typing import Sequence, Literal, Optional
 
 from .factor import Factor, FactorError
 from .stage import Stage, StageError
-from .flow import Flow, FlowError
+from .flow import Flow, FlowError, StageFactorDict
 
-import pandas as pd
+import pandas as pd  # type: ignore
 import json
 import numpy as np
 from prettytable import PrettyTable
-from scipy.stats import poisson
+from scipy.stats import poisson  # type: ignore
 
 
 class EpidemicModelError(Exception):
@@ -36,9 +36,9 @@ class EpidemicModel:
             if any(not isinstance(fl, Flow) for fl in flows):
                 raise EpidemicModelError('all flows in model must be Flow')
 
-            self._stages: tuple[Stage] = tuple(stages)
-            self._flows: tuple[Flow] = tuple(flows)
-            self._factors: tuple[Factor] = tuple(set(fa for fl in self._flows for fa in fl.get_factors()))
+            self._stages: tuple[Stage, ...] = tuple(stages)
+            self._flows: tuple[Flow, ...] = tuple(flows)
+            self._factors: tuple[Factor, ...] = tuple(set(fa for fl in self._flows for fa in fl.get_factors()))
             fa_names = tuple(fa.name for fa in self._factors)
             if len(set(fa_names)) < len(fa_names):
                 raise EpidemicModelError('all factors must have different names')
@@ -57,7 +57,7 @@ class EpidemicModel:
         # print(f'step #{step} start')
         for fa in self._factors:
             fa.update(step)
-            if fa.value < 0 or fa.value > 1:
+            if fa.value < 0:
                 raise FactorError(f"'{fa.name}' value {fa.value} not in [0, 1]")
 
         for fl in self._flows:
@@ -80,7 +80,7 @@ class EpidemicModel:
         old_flows = self._flows_df.loc[step] if step in self._flows_df.index else 0
         self._flows_df.loc[step] = old_flows + np.array(fl_changes)
 
-    def _set_population_size_flows(self, population_size: Optional[int | float]):
+    def _set_population_size_flows(self, population_size: int | float):
         for flow in self._flows:
             flow.set_population_size(population_size)
 
@@ -91,7 +91,7 @@ class EpidemicModel:
             fl.set_relativity_factors(relativity)
 
     def start(self, time: int, stochastic_time=False, stochastic_changes=False, **kwargs):
-        step = None
+        step = -1
         try:
             population_size = sum(st.num for st in self._stages)
             self._set_population_size_flows(population_size)
@@ -265,7 +265,7 @@ class EpidemicModel:
             raise EpidemicModelError('unknown json-structure version')
 
     def __to_json_kk_2024(self) -> str:
-        pass
+        return str(self)
 
     @classmethod
     def __from_json_kk_2024(cls, json_string: str) -> EpidemicModel:
@@ -282,8 +282,10 @@ class EpidemicModel:
                 start = stages_dict[r_flow['from']]
 
                 end_dict = {stages_dict[end['name']]: end['coef'] for end in r_flow['to']}
+                ind_dict: Optional[StageFactorDict]
                 if 'induction' in r_flow:
-                    ind_dict = {stages_dict[ind['name']]: float(ind['coef']) for ind in r_flow['induction']}
+                    ind_dict = {stages_dict[ind['name']]: float(ind['coef'])
+                                for ind in r_flow['induction']}
                 else:
                     ind_dict = None
                 fl_factor = r_flow['coef']
