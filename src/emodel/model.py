@@ -22,19 +22,19 @@ class EpidemicModel:
     __struct_versions = ['kk_2024']
     __struct_versions_types = Literal['kk_2024']
 
-    def __init__(self, stages: Sequence[Stage], flows: Sequence[Flow]):
+    def __init__(self, stages: Sequence[Stage], flows: Sequence[Flow], relativity_factors: bool = False):
         try:
             """
             EpidemicModel - compartmental epidemic model
             :param stages: list of Stages
-            :param flows: list of Flows
-            :param simulation_time: num of simulation steps
-            :param imitation: flag for imitation or numeric simulation
+            :param flows: list of Flows 
+            :param relativity_factors: if True, then the probability of flows will not be divided by the population 
+            size, otherwise it will be
             """
             if any(not isinstance(st, Stage) for st in stages):
-                raise EpidemicModelError("all stages in model must be Stage")
+                raise EpidemicModelError('all stages in model must be Stage')
             if any(not isinstance(fl, Flow) for fl in flows):
-                raise EpidemicModelError("all flows in model must be Flow")
+                raise EpidemicModelError('all flows in model must be Flow')
 
             self._stages: tuple[Stage] = tuple(stages)
             self._flows: tuple[Flow] = tuple(flows)
@@ -42,6 +42,9 @@ class EpidemicModel:
             fa_names = tuple(fa.name for fa in self._factors)
             if len(set(fa_names)) < len(fa_names):
                 raise EpidemicModelError('all factors must have different names')
+
+            self._relativity_factors = False
+            self.set_relativity_factors(relativity_factors)
 
             self._result_df: pd.DataFrame = pd.DataFrame(columns=[st.name for st in self._stages])
             self._factors_df: pd.DataFrame = pd.DataFrame(columns=[fa.name for fa in self._factors])
@@ -81,15 +84,17 @@ class EpidemicModel:
         for flow in self._flows:
             flow.set_population_size(population_size)
 
-    def start(self, time: int, stochastic_time=False, stochastic_changes=False,
-              divide_by_population_size=True, **kwargs):
+    def set_relativity_factors(self, relativity: bool):
+        if not isinstance(relativity, bool):
+            raise EpidemicModelError('relativity_factors must be bool')
+        for fl in self._flows:
+            fl.set_relativity_factors(relativity)
+
+    def start(self, time: int, stochastic_time=False, stochastic_changes=False, **kwargs):
         step = None
         try:
-            if divide_by_population_size:
-                population_size = sum(st.num for st in self._stages)
-                self._set_population_size_flows(population_size)
-            else:
-                self._set_population_size_flows(None)
+            population_size = sum(st.num for st in self._stages)
+            self._set_population_size_flows(population_size)
 
             old_factor_values = self.set_factors(**kwargs)
 
@@ -225,33 +230,23 @@ class EpidemicModel:
         return result_df
 
     @staticmethod
-    def get_sir(s=1000, i=1, r=0, beta=0.0004, gama=0.1):
-        match s, i, r, beta, gama:
-            case int(s), int(i), int(r), float(beta), float(gama):
+    def get_sir(s=1000, i=1, r=0, beta=0.4, gamma=0.1):
+        match s, i, r, beta, gamma:
+            case int(s), int(i), int(r), float(beta), float(gamma):
                 s = Stage('S', s)
                 i = Stage('I', i)
                 r = Stage('R', r)
 
                 beta = Factor(beta, name='beta')
-                gama = Factor(gama, name='gama')
+                gamma = Factor(gamma, name='gamma')
 
                 si = Flow(s, i, beta, inducing_factors=i)
-                ir = Flow(i, r, gama)
+                ir = Flow(i, r, gamma)
 
                 model = EpidemicModel((s, i, r), (si, ir))
                 return model
             case _:
                 raise EpidemicModelError('cannot create sir model with taken parameters')
-
-    # def confidence_interval(self, results, p_value: float = 0.9):
-    #     intervals = {}
-    #     percent = int(p_value * 100)
-    #     percent_ = 100 - percent
-    #     for r in results:
-    #         low = np.percentile(results[r], percent_, axis=1)
-    #         upp = np.percentile(results[r], percent, axis=1)
-    #         intervals[r] = pd.DataFrame({'l': low, 'u': upp}, index=results[r].index)
-    #     return intervals
 
     def to_json(self, struct_version: __struct_versions_types) -> str:
         generators = {'kk_2024': self.__to_json_kk_2024}
@@ -300,9 +295,3 @@ class EpidemicModel:
         except Exception as e:
             e.add_note('incorrect json structure in version "kk_2024"')
             raise e
-
-
-
-
-
-

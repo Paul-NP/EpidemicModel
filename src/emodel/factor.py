@@ -28,7 +28,7 @@ class Factor:
                 raise FactorError('invalid value for Factor, value can be int | float | Callable[[int], float]')
 
     def get_fvalue(self):
-        if self._func is None:
+        if self._func is not None:
             return self._func
         return self._value
 
