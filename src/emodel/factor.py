@@ -11,7 +11,7 @@ class Factor:
     def __init__(self, value: int | float | Callable[[int], float], *, name: Optional[str]) -> None:
         if name is not None and (not isinstance(name, str) or name == '' or len(name.split()) != 1):
             raise FactorError('invalid name for Factor, name must be not empty string without space')
-        self._name: Optional[str] = name
+        self._name: str = '' if name is None else name
         self._value: Optional[float] = None
         self._func: Optional[Callable[[int], float]] = None
 

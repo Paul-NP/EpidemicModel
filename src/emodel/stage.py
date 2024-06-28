@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from flow import Flow
+    from .flow import Flow
 
 from itertools import product
 
@@ -21,12 +21,11 @@ class Stage:
             raise StageError("Stage name must be str")
         if not self.__MIN_NAME_LEN <= len(name) <= self.__MAX_NAME_LEN:
             raise StageError("Stage name have unexpected len")
-        if not isinstance(start_num, float | int):
-            raise StageError("Stage start num must be number")
 
         self._name: str = name
-        self._current_num: float = float(start_num)
-        self._start_num: float = self._current_num
+        self._current_num: float = 0
+        self._start_num: float = 0
+        self.num = start_num
         self._changes: list[float | int] = []
         self._probability_out: dict[Flow, float] = {}
 
@@ -75,6 +74,11 @@ class Stage:
 
     @num.setter
     def num(self, value: int):
+        if not isinstance(value, float | int):
+            raise StageError("Stage start num must be number")
+        if value < 0:
+            raise StageError('Stage start num cannot be negative')
+
         self._start_num = value
         self.reset_num()
 

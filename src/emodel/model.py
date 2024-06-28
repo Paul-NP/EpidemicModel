@@ -283,7 +283,7 @@ class EpidemicModel:
 
                 end_dict = {stages_dict[end['name']]: end['coef'] for end in r_flow['to']}
                 if 'induction' in r_flow:
-                    ind_dict = {stages_dict[ind['name']]: ind['coef'] for ind in r_flow['induction']}
+                    ind_dict = {stages_dict[ind['name']]: float(ind['coef']) for ind in r_flow['induction']}
                 else:
                     ind_dict = None
                 fl_factor = r_flow['coef']

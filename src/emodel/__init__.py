@@ -1,4 +1,4 @@
-from .factor import Factor
-from .stage import Stage
-from .flow import Flow
-from .model import EpidemicModel
+from .factor import Factor, FactorError
+from .stage import Stage, StageError
+from .flow import Flow, FlowError
+from .model import EpidemicModel, EpidemicModelError

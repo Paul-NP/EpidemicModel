@@ -8,7 +8,10 @@ from scipy.stats import poisson
 from math import prod
 
 
-AnyFactor: TypeAlias = int | float | Callable[[int], float] | Factor
+AnySourceFactor: TypeAlias = int | float | Callable[[int], float]
+AnyFactor: TypeAlias = AnySourceFactor | Factor
+StageFactorDict: TypeAlias = (dict[Stage, int] | dict[Stage, float] | dict[Stage, Factor] |
+                              dict[Stage, Callable[[int], float]])
 FlowMethod: TypeAlias = int
 
 
@@ -32,15 +35,15 @@ class Flow:
             elif Factor.may_be_factor(v):
                 factors[k] = Factor(v, name=None)
             elif isinstance(v, Factor):
-                if v.name is None:
+                if not v.name:
                     raise FlowError(f"Factors created manually must have names,"
                                     f"one factor in {content} is unnamed")
                 factors[k] = v
             else:
                 raise FlowError(f"{content} dictionary must include {AnyFactor} as values")
 
-    def __init__(self, start: Stage, end: Stage | dict[Stage, AnyFactor],
-                 flow_factor: AnyFactor = 1, inducing_factors: Stage | dict[Stage, AnyFactor] = None):
+    def __init__(self, start: Stage, end: Stage | StageFactorDict,
+                 flow_factor: AnyFactor = 1, inducing_factors: Optional[Stage | StageFactorDict] = None):
         if not isinstance(start, Stage):
             raise FlowError("start of Flow must be Stage")
         if isinstance(end, Stage):
@@ -52,12 +55,13 @@ class Flow:
         if any(e is start for e in end):
             raise FlowError("start Stage cannot coincide with end Stage")
 
-        if Factor.may_be_factor(flow_factor):
-            flow_factor = Factor(flow_factor, name=None)
-        elif isinstance(flow_factor, Factor):
-            if flow_factor.name is None:
+        if isinstance(flow_factor, Factor):
+            if not flow_factor.name:
                 raise FlowError(f"Factors created manually must have names,"
                                 f"flow_factor is unnamed")
+        elif Factor.may_be_factor(flow_factor):
+            flow_factor = Factor(flow_factor, name=None)
+
         else:
             raise FlowError(f'flow_factor must be {AnyFactor}')
 
@@ -98,13 +102,13 @@ class Flow:
             raise FlowError(f'flow have not calculation method = {method}')
 
     def _rename_factors(self):
-        if self._flow_factor is not None and self._flow_factor.name is None:
+        if self._flow_factor is not None and not self._flow_factor.name:
             self._flow_factor.name = f'{self}-f'
         for s, f in self._inducing_factors.items():
-            if f.name is None:
+            if not f.name:
                 f.name = f'if[{s.name}]-{self}'
         for s, f in self._end_dict.items():
-            if f.name is None:
+            if not f.name:
                 f.name = f'ef[{s.name}]-{self}'
 
     def _calc_flow_probability(self):
