@@ -85,7 +85,7 @@ class Flow:
         self._end_dict: dict[Stage, Factor] = end_dict
         self._flow_factor: Factor = flow_factor
 
-        self._inducing_factors: dict[Stage, Factor] = inducing_dict
+        self._ind_dict: dict[Stage, Factor] = inducing_dict
         self._change_in: float = 0
         self._submit_func: Callable = self._teor_submit
 
@@ -108,7 +108,7 @@ class Flow:
     def _rename_factors(self):
         if self._flow_factor is not None and not self._flow_factor.name:
             self._flow_factor.name = f'{self}-f'
-        for s, f in self._inducing_factors.items():
+        for s, f in self._ind_dict.items():
             if not f.name:
                 f.name = f'if[{s.name}]-{self}'
         for s, f in self._end_dict.items():
@@ -116,12 +116,12 @@ class Flow:
                 f.name = f'ef[{s.name}]-{self}'
 
     def _calc_flow_probability(self):
-        if self._inducing_factors:
+        if self._ind_dict:
             flow_factor = self._flow_factor.value
             if not self._relativity_factors:
                 flow_factor /= self._population_size
             flow_probability = 1 - prod((1 - flow_factor * ind_factor.value) ** ind.num
-                                        for ind, ind_factor in self._inducing_factors.items())
+                                        for ind, ind_factor in self._ind_dict.items())
         else:
             flow_probability = self._flow_factor.value
         self._flow_probability = flow_probability
@@ -169,7 +169,7 @@ class Flow:
 
     def get_factors(self) -> list[Factor]:
         all_factors = [self._flow_factor]
-        for st, fa in self._inducing_factors.items():
+        for st, fa in self._ind_dict.items():
             all_factors.append(fa)
         for st, fa in self._end_dict.items():
             all_factors.append(fa)
