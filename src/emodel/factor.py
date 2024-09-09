@@ -8,10 +8,23 @@ class FactorError(Exception):
 
 
 class Factor:
-    def __init__(self, value: int | float | Callable[[int], float], *, name: Optional[str]):
-        if name is not None and (not isinstance(name, str) or name == '' or len(name.split()) != 1):
-            raise FactorError('invalid name for Factor, name must be not empty string without space')
-        self._name: str = '' if name is None else name
+    __MIN_NAME_LEN: int = 1
+    __MAX_NAME_LEN: int = 10
+
+    @classmethod
+    def __check_name(cls, name: str):
+        if not isinstance(name, str):
+            raise FactorError('The factor name must be str')
+        if len(name.split()) > 1:
+            raise FactorError('The factor name must be one word')
+        if not cls.__MIN_NAME_LEN <= len(name) <= cls.__MAX_NAME_LEN:
+            raise FactorError(f'The factor name has an invalid length. Valid range '
+                              f'[{cls.__MIN_NAME_LEN}, {cls.__MAX_NAME_LEN}]')
+
+    def __init__(self, name: str, value: int | float | Callable[[int], float]):
+        self.__check_name(name)
+
+        self._name: str = name
         self._value: float = 0
         self._func: Optional[Callable[[int], float]] = None
 

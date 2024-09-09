@@ -16,16 +16,32 @@ class Stage:
     __MAX_NAME_LEN: int = 20
     __FLOAT_LEN: int = 2
 
-    def __init__(self, name: str, start_num: float = 0):
+    __MIN_VALUE: int = 0
+
+    @classmethod
+    def _check_name(cls, name: str):
         if not isinstance(name, str):
-            raise StageError("Stage name must be str")
-        if not self.__MIN_NAME_LEN <= len(name) <= self.__MAX_NAME_LEN:
-            raise StageError("Stage name have unexpected len")
+            raise StageError('The stage name must be str')
+        if len(name.split()) > 1:
+            raise StageError('The stage name must be one word')
+        if not cls.__MIN_NAME_LEN <= len(name) <= cls.__MAX_NAME_LEN:
+            raise StageError(f'The stage name has an invalid length. Valid range '
+                             f'[{cls.__MIN_NAME_LEN}, {cls.__MAX_NAME_LEN}]')
+
+    @classmethod
+    def _check_value(cls, value: int | float):
+        if not isinstance(value, float | int):
+            raise StageError("Stage start num must be number")
+        if value < cls.__MIN_VALUE:
+            raise StageError(f'Starting number in the stage cannot be less than {cls.__MIN_VALUE}')
+
+    def __init__(self, name: str, start_num: int | float = 0):
+        self._check_name(name)
+        self._check_value(start_num)
 
         self._name: str = name
-        self._current_num: float = 0
-        self._start_num: float = 0
-        self.num = start_num
+        self._current_num: float = float(start_num)
+        self._start_num: float = float(start_num)
         self._changes: list[float | int] = []
         self._probability_out: dict[Flow, float] = {}
 
@@ -74,11 +90,6 @@ class Stage:
 
     @num.setter
     def num(self, value: int):
-        if not isinstance(value, float | int):
-            raise StageError("Stage start num must be number")
-        if value < 0:
-            raise StageError('Stage start num cannot be negative')
-
         self._start_num = value
         self.reset_num()
 
