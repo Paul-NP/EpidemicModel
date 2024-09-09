@@ -176,9 +176,13 @@ class Flow:
 
         return all_factors
 
+    @staticmethod
+    def generate_flow_name(start_name: str, end_names: list[str]):
+        ends = ','.join(sorted(end_names))
+        return f'F({start_name}>{ends})'
+
     def __str__(self) -> str:
-        ends = ','.join([e.name for e in self._end_dict.keys()])
-        return f"F({self._start.name}>{ends})"
+        return self.generate_flow_name(self._start.name, [e.name for e in self._end_dict.keys()])
 
     def __repr__(self) -> str:
         return self.__str__()
