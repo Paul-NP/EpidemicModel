@@ -11,6 +11,8 @@ import numpy as np
 from prettytable import PrettyTable
 from scipy.stats import poisson  # type: ignore
 
+from datetime import datetime
+
 
 class EpidemicModelError(Exception):
     pass
@@ -172,14 +174,18 @@ class EpidemicModel:
         table.to_csv(filename, sep=delimiter, decimal=floating_point,
                      float_format=f'%.{self.__len_float}f', index_label='step')
 
-    def write_all_result(self, model_name: str, floating_point='.', delimiter=',', path: str = ''):
+    def write_results(self, floating_point='.', delimiter=',', path: str = '',
+                      write_flows: bool = False, write_factors: bool = False):
         if path and path[-1] != '\\':
             path = path + '\\'
-        if not isinstance(model_name, str) or len(model_name) == 0:
-            raise EpidemicModelError('model name must be not empty str')
-        self._write_table(f'{path}{model_name}_result.csv', self._result_df, floating_point, delimiter)
-        self._write_table(f'{path}{model_name}_flows.csv', self._flows_df, floating_point, delimiter)
-        self._write_table(f'{path}{model_name}_factors.csv', self._factors_df, floating_point, delimiter)
+
+        current_time = datetime.today().strftime('%d_%b_%y_%H-%M-%S')
+        first_part = f'{path}{self._name}_{current_time}'
+        self._write_table(f'{first_part}_result.csv', self._result_df, floating_point, delimiter)
+        if write_flows:
+            self._write_table(f'{first_part}_flows.csv', self._flows_df, floating_point, delimiter)
+        if write_factors:
+            self._write_table(f'{first_part}_factors.csv', self._factors_df, floating_point, delimiter)
 
     def set_factors(self, **kwargs):
         old_factor_values = {}
@@ -200,10 +206,9 @@ class EpidemicModel:
         if not isinstance(n, int) or not isinstance(time, int):
             raise EpidemicModelError(f'several_stoch_runs expect two int but have {type(n)}, {type(time)}')
 
-        # self.set_factors(**kwargs)
         results = {s.name: pd.DataFrame() for s in self._stages}
         flow_results = {str(fl): pd.DataFrame() for fl in self._flows}
-        for i in range(1, n+1):
+        for i in range(1, n + 1):
             print(f'stochastic run number {i:>4}')
             self.start(time, stochastic_time=stochastic_time, stochastic_changes=stochastic_changes, **kwargs)
             for st_name in self._result_df:
@@ -213,38 +218,6 @@ class EpidemicModel:
                 flow_results[fl_name] = pd.concat([flow_results[fl_name], self._flows_df[fl_name]], axis=1)
 
         return results, flow_results
-
-    def sir_with_data_delta(self, data):
-        result_df = pd.DataFrame(columns=list('SIR'))
-        result_df.loc[0] = [st.num for st in self._stages]
-
-        gama = [fa for fa in self._factors if fa.name == 'gama'][0]
-        for step in range(len(data)):
-            si = data[step]
-            ir = min(result_df.loc[step, 'I'], poisson.rvs(result_df.loc[step, 'I'] * gama.value))
-            changes = np.array([-si, si - ir, ir])
-            result_df.loc[step+1] = result_df.loc[step] + changes
-
-        return result_df
-
-    @staticmethod
-    def get_sir(s=1000, i=1, r=0, beta=0.4, gamma=0.1):
-        match s, i, r, beta, gamma:
-            case int(s), int(i), int(r), float(beta), float(gamma):
-                s = Stage('S', s)
-                i = Stage('I', i)
-                r = Stage('R', r)
-
-                beta = Factor(beta, name='beta')
-                gamma = Factor(gamma, name='gamma')
-
-                si = Flow(s, i, beta, inducing=i)
-                ir = Flow(i, r, gamma)
-
-                model = EpidemicModel((s, i, r), (si, ir))
-                return model
-            case _:
-                raise EpidemicModelError('cannot create sir model with taken parameters')
 
     def to_json(self, struct_version: __struct_versions_types) -> str:
         generators = {'kk_2024': self.__to_json_kk_2024}
@@ -295,3 +268,9 @@ class EpidemicModel:
         except Exception as e:
             e.add_note('incorrect json structure in version "kk_2024"')
             raise e
+
+    def __str__(self):
+        return f'Model({self._name})'
+
+    def __repr__(self):
+        return f'Model({self._name}: {list(self._flows)})'

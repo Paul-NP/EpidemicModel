@@ -44,7 +44,8 @@ class Flow:
     def __init__(self, start: Stage, end: stageFactorDict, flow_factor: anyFactor,
                  inducing: stageFactorDict):
 
-        self._name = self._generate_flow_name(start.name, [e.name for e in end.keys()])
+        self._name, self._full_name = self._generate_names(start.name, [e.name for e in end.keys()],
+                                                           [i.name for i in inducing.keys()])
         end_dict = self._prepare_factors_dict(end, 'end')
         flow_factor = self._prepare_flow_factor(flow_factor)
         ind_dict = self._prepare_factors_dict(inducing, 'inducing')
@@ -136,9 +137,10 @@ class Flow:
         return all_factors
 
     @staticmethod
-    def _generate_flow_name(start_name: str, end_names: list[str]):
+    def _generate_names(start_name: str, end_names: list[str], ind_names: list[str]):
         ends = ','.join(sorted(end_names))
-        return f'F({start_name}>{ends})'
+        induced = ','.join(sorted(ind_names))
+        return f'F({start_name}>{ends})', f'F({start_name}>{ends}|by-{induced})'
 
     def is_similar(self, other: Flow):
         if self._start != other._start:
@@ -151,7 +153,7 @@ class Flow:
         return self._name
 
     def __repr__(self) -> str:
-        return self.__str__()
+        return self._full_name
 
     @property
     def start(self) -> Stage:
