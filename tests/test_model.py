@@ -37,3 +37,10 @@ def test_standard_seir(time, s, e, i, r):
     result = model.start(40)
     assert tuple(result.loc[time]) == pytest.approx((s, e, i, r), abs=1)
 
+
+@pytest.mark.parametrize('time, s, i, r', [(0, 100, 1, 0), (10, 83, 11, 8), (30, 14, 8, 78)])
+def test_sir_changed(time, s, i, r):
+    model = Standard.SIR_builder().build()
+    model.set_factors(beta=0.5, gamma=0.2)
+    result = model.start(40)
+    assert tuple(result.loc[time]) == pytest.approx((s, i, r), abs=1)

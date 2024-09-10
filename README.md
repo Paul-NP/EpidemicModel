@@ -11,21 +11,16 @@ import emodel
 ## Сreating a simple SIR model
 
 ```python
-from emodel import EpidemicModel, Stage, Factor, Flow
+from emodel import ModelBuilder
 from matplotlib import pyplot as plt
 
-s = Stage('S', 99)
-i = Stage('I', 1)
-r = Stage('R', 0)
+builder = ModelBuilder()
+builder.add_stage('S', 100).add_stage('I', 1).add_stage('R')
+builder.add_factor('beta', 0.4).add_factor('gamma', 0.1)
+builder.add_flow('S', 'I', 'beta', 'I').add_flow('I', 'R', 'gamma')
 
-beta = Factor(0.4, name='beta')
-gama = Factor(0.1, name='gama')
-
-s_i = Flow(s, i, beta, inducing=i)
-i_r = Flow(i, r, gama)
-
-sir_model = EpidemicModel((s, i, r), (s_i, i_r))
-result_df = sir_model.start(70)
+model = builder.build()    
+result_df = model.start(70)
 
 result_df.plot(title='SIR', ylabel='population', xlabel='time')
 plt.show()
@@ -37,19 +32,44 @@ plt.show()
 
 ![sir example](https://raw.githubusercontent.com/Paul-NP/EpidemicModel/master/documentation/images/sir_example.png)
 
-## Load a model from json.
+## Use standard models
 
-An example of a modeling function from a file with a json structure and saving the results to a csv table.
+The package contains several standard epidemiological models.
 
 ```python
-from emodel import EpidemicModel
+from emodel import Standard
 
-def modelling_from_json(filename_json: str, filename_csv: str, time: int):
-	with open(filename_json, encoding='utf8') as file:
-		json_content = file.read()
-		e_model = EpidemicModel.from_json(json_content, struct_version='kk_2024')
-		result = e_model.start(time)
-		result.to_csv(filename_csv, sep=',')
+model = Standard.SIR_builder().build()
+result = model.start(40)
 ```
 
-`'kk_2024'` - model description protocol (Kireev-Kuldarev-2024)
+You can change start num for every stage.
+Also you can change Factor's values.
+
+```python
+from emodel import Standard
+
+model = Standard.SIR_builder().build()
+model.set_start_stages(S=1000, I=10, R=0)
+model.set_factors(beta=0.5)
+```
+
+## Print and write results table
+
+After using the model you can print result table in console.
+```python
+from emodel import Standard
+
+model = Standard.SIR_builder().build()
+model.start(60)
+model.print_result_table()
+```
+or writing result in csv files
+
+```python
+from emodel import Standard
+
+model = Standard.SIR_builder().build()
+model.start(60)
+model.write_results()
+```
