@@ -21,7 +21,7 @@ r = Stage('R', 0)
 beta = Factor(0.4, name='beta')
 gama = Factor(0.1, name='gama')
 
-s_i = Flow(s, i, beta, inducing_factors=i)
+s_i = Flow(s, i, beta, inducing=i)
 i_r = Flow(i, r, gama)
 
 sir_model = EpidemicModel((s, i, r), (s_i, i_r))

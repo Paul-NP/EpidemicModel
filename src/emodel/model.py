@@ -3,7 +3,7 @@ from typing import Sequence, Literal, Optional
 
 from .factor import Factor, FactorError
 from .stage import Stage, StageError
-from .flow import Flow, FlowError, StageFactorDict
+from .flow import Flow, FlowError, stageFactorDict
 
 import pandas as pd  # type: ignore
 import json
@@ -22,26 +22,20 @@ class EpidemicModel:
     __struct_versions = ['kk_2024']
     __struct_versions_types = Literal['kk_2024']
 
-    def __init__(self, stages: Sequence[Stage], flows: Sequence[Flow], relativity_factors: bool = False):
+    def __init__(self, name: str, stages: list[Stage], flows: list[Flow], relativity_factors: bool):
+        """
+        EpidemicModel - compartmental epidemic model
+        :param stages: list of Stages
+        :param flows: list of Flows
+        :param relativity_factors: if True, then the probability of flows will not be divided by the population
+        size, otherwise it will be
+        """
         try:
-            """
-            EpidemicModel - compartmental epidemic model
-            :param stages: list of Stages
-            :param flows: list of Flows 
-            :param relativity_factors: if True, then the probability of flows will not be divided by the population 
-            size, otherwise it will be
-            """
-            if any(not isinstance(st, Stage) for st in stages):
-                raise EpidemicModelError('all stages in model must be Stage')
-            if any(not isinstance(fl, Flow) for fl in flows):
-                raise EpidemicModelError('all flows in model must be Flow')
+            self._name = name
 
             self._stages: tuple[Stage, ...] = tuple(stages)
             self._flows: tuple[Flow, ...] = tuple(flows)
             self._factors: tuple[Factor, ...] = tuple(set(fa for fl in self._flows for fa in fl.get_factors()))
-            fa_names = tuple(fa.name for fa in self._factors)
-            if len(set(fa_names)) < len(fa_names):
-                raise EpidemicModelError('all factors must have different names')
 
             self._relativity_factors = False
             self.set_relativity_factors(relativity_factors)
@@ -153,6 +147,10 @@ class EpidemicModel:
         print(self._get_table(self.full_df))
 
     @property
+    def name(self):
+        return self._name
+
+    @property
     def result_df(self):
         return self._result_df.copy()
 
@@ -240,7 +238,7 @@ class EpidemicModel:
                 beta = Factor(beta, name='beta')
                 gamma = Factor(gamma, name='gamma')
 
-                si = Flow(s, i, beta, inducing_factors=i)
+                si = Flow(s, i, beta, inducing=i)
                 ir = Flow(i, r, gamma)
 
                 model = EpidemicModel((s, i, r), (si, ir))
@@ -282,7 +280,7 @@ class EpidemicModel:
                 start = stages_dict[r_flow['from']]
 
                 end_dict = {stages_dict[end['name']]: end['coef'] for end in r_flow['to']}
-                ind_dict: Optional[StageFactorDict]
+                ind_dict: Optional[stageFactorDict]
                 if 'induction' in r_flow:
                     ind_dict = {stages_dict[ind['name']]: float(ind['coef'])
                                 for ind in r_flow['induction']}

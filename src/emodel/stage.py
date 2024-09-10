@@ -35,7 +35,7 @@ class Stage:
         if value < cls.__MIN_VALUE:
             raise StageError(f'Starting number in the stage cannot be less than {cls.__MIN_VALUE}')
 
-    def __init__(self, name: str, start_num: int | float = 0):
+    def __init__(self, name: str, start_num: int | float):
         self._check_name(name)
         self._check_value(start_num)
 
@@ -90,6 +90,7 @@ class Stage:
 
     @num.setter
     def num(self, value: int):
+        self._check_value(value)
         self._start_num = value
         self.reset_num()
 

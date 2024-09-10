@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Callable, TypeAlias, Optional, Union
+from typing import Callable, TypeAlias, Optional, Union, Any
 
 from .stage import Stage
 from .factor import Factor
@@ -8,10 +8,10 @@ from scipy.stats import poisson  # type: ignore
 from math import prod
 
 
-AnySourceFactor: TypeAlias = Union[int, float, Callable[[int], float]]
-AnyFactor: TypeAlias = AnySourceFactor | Factor
-StageFactorDict: TypeAlias = dict[Stage, AnyFactor]
-FlowMethod: TypeAlias = int
+factorValue: TypeAlias = Union[int, float, Callable[[int], float]]
+anyFactor: TypeAlias = factorValue | Factor
+stageFactorDict: TypeAlias = dict[Stage, anyFactor]
+flowMethod: TypeAlias = int
 
 
 class FlowError(Exception):
@@ -21,62 +21,33 @@ class FlowError(Exception):
 class Flow:
     _accuracy = 0.00001
 
-    TEOR_METHOD: FlowMethod = 0
-    STOCH_METHOD: FlowMethod = 1
+    TEOR_METHOD: flowMethod = 0
+    STOCH_METHOD: flowMethod = 1
 
-    @staticmethod
-    def __check_factors_dict(factors: StageFactorDict, content: str) -> dict[Stage, Factor]:
-        if not factors:
-            raise FlowError(f'{content} dictionary is empty')
+    def _prepare_factors_dict(self, factors_data: dict[Stage, Factor | factorValue], content: str) -> dict[Stage, Factor]:
         new_factors = {}
-        for k, v in factors.items():
-            if not isinstance(k, Stage):
-                raise FlowError(f"{content} dictionary must include Stages as keys")
-            elif isinstance(v, Factor):
-                if not v.name:
-                    raise FlowError(f"Factors created manually must have names,"
-                                    f"one factor in {content} is unnamed")
-
-                new_factors[k] = v
-            elif Factor.may_be_factor(v):
-                new_factors[k] = Factor(v, name=None)
+        for stage, factor in factors_data.items():
+            if isinstance(factor, Factor):
+                new_factors[stage] = factor
             else:
-                raise FlowError(f"{content} dictionary must include {AnyFactor} as values")
+                factor_name = f'{content[:3]}[{stage.name}]-{self}'
+                new_factors[stage] = Factor(factor_name, factor)
+
         return new_factors
 
-    def __init__(self, start: Stage, end: Stage | StageFactorDict,
-                 flow_factor: AnyFactor = 1, inducing_factors: Optional[Stage | StageFactorDict] = None):
-
-        if not isinstance(start, Stage):
-            raise FlowError("start of Flow must be Stage")
-
-        if isinstance(end, Stage):
-            end_dict = {end: Factor(1, name=None)}
-        elif isinstance(end, dict):
-            end_dict = self.__check_factors_dict(end, 'end')
+    def _prepare_flow_factor(self, factor_data: Factor | factorValue) -> Factor:
+        if isinstance(factor_data, Factor):
+            return factor_data
         else:
-            raise FlowError(f"end of Flow must be Stage or dict[Stage, {AnyFactor}]")
+            return Factor(f'factor-{self}', factor_data)
 
-        if any(e is start for e in end_dict):
-            raise FlowError("start Stage cannot coincide with end Stage")
+    def __init__(self, start: Stage, end: stageFactorDict, flow_factor: anyFactor,
+                 inducing: stageFactorDict):
 
-        if isinstance(flow_factor, Factor):
-            if not flow_factor.name:
-                raise FlowError(f"Factors created manually must have names,"
-                                f"flow_factor is unnamed")
-        elif Factor.may_be_factor(flow_factor):
-            flow_factor = Factor(flow_factor, name=None)
-        else:
-            raise FlowError(f'flow_factor must be {AnyFactor}')
-
-        if isinstance(inducing_factors, Stage):
-            inducing_dict = {inducing_factors: Factor(1, name=None)}
-        elif isinstance(inducing_factors, dict):
-            inducing_dict = self.__check_factors_dict(inducing_factors, 'factors')
-        elif inducing_factors is None:
-            inducing_dict = {}
-        else:
-            raise FlowError(f'inducing must be {Stage} or dict[Stage, {AnyFactor}]')
+        self._name = self._generate_flow_name(start.name, [e.name for e in end.keys()])
+        end_dict = self._prepare_factors_dict(end, 'end')
+        flow_factor = self._prepare_flow_factor(flow_factor)
+        ind_dict = self._prepare_factors_dict(inducing, 'inducing')
 
         self._population_size: Optional[float | int] = None
         self._relativity_factors: bool = False
@@ -85,11 +56,9 @@ class Flow:
         self._end_dict: dict[Stage, Factor] = end_dict
         self._flow_factor: Factor = flow_factor
 
-        self._ind_dict: dict[Stage, Factor] = inducing_dict
+        self._ind_dict: dict[Stage, Factor] = ind_dict
         self._change_in: float = 0
         self._submit_func: Callable = self._teor_submit
-
-        self._rename_factors()
 
     def set_population_size(self, population_size: int | float):
         self._population_size = population_size
@@ -97,23 +66,13 @@ class Flow:
     def set_relativity_factors(self, relativity: bool):
         self._relativity_factors = relativity
 
-    def set_method(self, method: FlowMethod):
+    def set_method(self, method: flowMethod):
         if method == self.TEOR_METHOD:
             self._submit_func = self._teor_submit
         elif method == self.STOCH_METHOD:
             self._submit_func = self._stoch_submit
         else:
             raise FlowError(f'flow have not calculation method = {method}')
-
-    def _rename_factors(self):
-        if self._flow_factor is not None and not self._flow_factor.name:
-            self._flow_factor.name = f'{self}-f'
-        for s, f in self._ind_dict.items():
-            if not f.name:
-                f.name = f'if[{s.name}]-{self}'
-        for s, f in self._end_dict.items():
-            if not f.name:
-                f.name = f'ef[{s.name}]-{self}'
 
     def _calc_flow_probability(self):
         if self._ind_dict:
@@ -177,12 +136,27 @@ class Flow:
         return all_factors
 
     @staticmethod
-    def generate_flow_name(start_name: str, end_names: list[str]):
+    def _generate_flow_name(start_name: str, end_names: list[str]):
         ends = ','.join(sorted(end_names))
         return f'F({start_name}>{ends})'
 
+    def is_similar(self, other: Flow):
+        if self._start != other._start:
+            return False
+        if set(self._end_dict.keys()) & set(other._end_dict.keys()):
+            return True
+        return False
+
     def __str__(self) -> str:
-        return self.generate_flow_name(self._start.name, [e.name for e in self._end_dict.keys()])
+        return self._name
 
     def __repr__(self) -> str:
         return self.__str__()
+
+    @property
+    def start(self) -> Stage:
+        return self._start
+
+    @property
+    def ends(self) -> list[Stage]:
+        return list(self._end_dict.keys())

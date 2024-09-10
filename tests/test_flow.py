@@ -1,6 +1,6 @@
-from emodel import Stage, StageError
-from emodel import Flow, FlowError
-from emodel import Factor, FactorError
+from emodel.stage import Stage, StageError
+from emodel.flow import Flow, FlowError
+from emodel.factor import Factor, FactorError
 
 import pytest
 
@@ -9,8 +9,8 @@ import pytest
 def get_simple_flow():
     s = Stage('S', 10)
     i = Stage('I', 0)
-    beta = Factor(0.4, name='beta')
-    fl = Flow(s, i, beta)
+    beta = Factor('beta', 0.4)
+    fl = Flow(s, {i: 1}, beta, {})
     return s, i, beta, fl
 
 

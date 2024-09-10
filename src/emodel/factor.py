@@ -9,7 +9,7 @@ class FactorError(Exception):
 
 class Factor:
     __MIN_NAME_LEN: int = 1
-    __MAX_NAME_LEN: int = 10
+    __MAX_NAME_LEN: int = 30
 
     @classmethod
     def __check_name(cls, name: str):
@@ -18,7 +18,7 @@ class Factor:
         if len(name.split()) > 1:
             raise FactorError('The factor name must be one word')
         if not cls.__MIN_NAME_LEN <= len(name) <= cls.__MAX_NAME_LEN:
-            raise FactorError(f'The factor name has an invalid length. Valid range '
+            raise FactorError(f'The factor name "{name}" has an invalid length. Valid range '
                               f'[{cls.__MIN_NAME_LEN}, {cls.__MAX_NAME_LEN}]')
 
     def __init__(self, name: str, value: int | float | Callable[[int], float]):
@@ -48,7 +48,16 @@ class Factor:
 
     @staticmethod
     def may_be_factor(value: Any) -> bool:
-        return isinstance(value, (int, float)) or callable(value)
+        if isinstance(value, (int, float)):
+            return True
+        elif callable(value):
+            try:
+                result = value(0)
+                return isinstance(result, (float, int))
+            except Exception:
+                return False
+        else:
+            return False
 
     def update(self, time: int):
         if self._func is not None:
@@ -116,4 +125,5 @@ class Factor:
                     k = keys[-1]
                 v = float(keyframes[k] + (cont and key_speed[k] * (time - k)))
                 return v
+
         return func

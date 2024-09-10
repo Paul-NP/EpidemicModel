@@ -1,5 +1,5 @@
 import pytest
-from emodel import Stage, StageError
+from emodel.stage import Stage, StageError
 
 
 @pytest.mark.parametrize('name, num', [('S', 100), ('I', 1.0), ('Rec', 0)])
@@ -9,7 +9,7 @@ def test_full_init_good(name, num):
 
 
 def test_empty_num():
-    st = Stage('S')
+    st = Stage('S', 0)
     assert st.name, st.num == ('S', 0)
 
 
@@ -33,20 +33,20 @@ def test_set_num():
 
 
 def test_set_num_error():
-    st = Stage('S')
+    st = Stage('S', 0)
     with pytest.raises(StageError):
         st.num = 'q'
 
 
 def test_not_applied_change():
-    st = Stage('S')
+    st = Stage('S', 0)
     st.add_change(10)
     st.add_change(20)
     assert st.num == 0
 
 
 def test_applied_change():
-    st = Stage('S')
+    st = Stage('S', 0)
     st.add_change(10)
     st.add_change(20)
     st.apply_changes()

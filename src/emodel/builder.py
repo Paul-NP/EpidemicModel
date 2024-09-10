@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from .stage import Stage
 from .factor import Factor
 from .flow import Flow
@@ -19,27 +21,43 @@ class ModelBuilderError(Exception):
 
 class ModelBuilder:
     def __init__(self):
-        self._stages = {}
-        self._factors = {}
-        self._flows = []
+        self._stages: dict[str, Stage] = {}
+        self._factors: dict[str, Factor] = {}
+        self._flows: list[Flow] = []
 
-    def add_stage(self, name: stageName, start_num: int | float) -> None:
+        self._relativity_factors: bool = False
+        self._model_name: str = ''
+        self._manual_name: bool = False
+
+    def add_stage(self, name: stageName, start_num: int | float = 0) -> ModelBuilder:
         self._check_name(name)
         self._check_new_stage_name(name)
 
         new_stage = Stage(name, start_num)
         self._stages[name] = new_stage
+        return self
 
-    def add_factor(self, name: factorName, value: factorValue) -> None:
+    def add_stages(self, **kwargs: int | float) -> ModelBuilder:
+        for name, value in kwargs.items():
+            self.add_stage(name, value)
+        return self
+
+    def add_factor(self, name: factorName, value: factorValue) -> ModelBuilder:
         self._check_name(name)
         self._check_new_factor_name(name)
 
         new_factor = Factor(name, value)
         self._factors[name] = new_factor
+        return self
+
+    def add_factors(self, **kwargs: factorValue) -> ModelBuilder:
+        for name, value in kwargs.items():
+            self.add_factor(name, value)
+        return self
 
     def add_flow(self, start: stageName, end: stageName | stageNameFactorDict,
                  factor: factorName | factorValue,
-                 inducing: Optional[stageName | stageNameFactorDict] = None) -> None:
+                 inducing: Optional[stageName | stageNameFactorDict] = None) -> ModelBuilder:
 
         if inducing is None:
             inducing = {}
@@ -47,21 +65,52 @@ class ModelBuilder:
         self._check_start(start)
         self._check_stage_data(end, 'End')
         self._check_stage_data(inducing, 'Inducing')
-
-        flow_name = Flow.generate_flow_name(start)
+        self._check_factor(factor)
 
         start_stage = self._prepare_start_stage(start)
-        end_stages = self._get_stage_factor_dict(end)
-        inducing_stages = self._get_stage_factor_dict(inducing)
+        end_stages = self._prepare_stage_factor_dict(end)
+        inducing_stages = self._prepare_stage_factor_dict(inducing)
+        flow_factor = self._prepare_factor(factor)
 
-        flow_factor = self._get_factor(factor)
+        self._check_start_end_conflict(start_stage, end_stages)
 
         flow = Flow(start_stage, end_stages, flow_factor, inducing_stages)
+        self._check_new_flow(flow)
+
         self._flows.append(flow)
+        return self
+
+    def set_relativity_factors(self, relativity: bool) -> ModelBuilder:
+        if not isinstance(relativity, bool):
+            raise ModelBuilderError('Relativity of Factors must be bool')
+        self._relativity_factors = relativity
+        return self
+
+    def set_model_name(self, name: str) -> ModelBuilder:
+        self._check_name(name)
+        self._manual_name = True
+        self._model_name = name
+        return self
+
+    def build(self):
+        self._check_completeness()
+        if not self._manual_name:
+            self._generate_model_name()
+
+        stages = list(self._stages.values())
+        flows = self._flows
+
+        model = EpidemicModel(self._model_name, stages, flows, self._relativity_factors)
+        return model
 
     def _check_start(self, start: Any):
         self._check_name(start)
         self._check_for_stage_name(start)
+
+    @staticmethod
+    def _check_start_end_conflict(start_stage: Stage, end_stages: dict[Stage, Factor | factorValue]):
+        if start_stage in end_stages.keys():
+            raise ModelBuilderError('Start Stage cannot coincide with any End Stage')
 
     def _check_stage_data(self, data: Any, source_type: str):
         if isinstance(data, stageName):
@@ -78,6 +127,8 @@ class ModelBuilder:
     def _check_name(name: Any):
         if not isinstance(name, anyName):
             raise ModelBuilderError('Any name in the model must be a string')
+        if len(name) == 0:
+            raise ModelBuilderError('Any name in the model cannot be empty')
 
     @staticmethod
     def _check_names_dict(original_dict: dict[Any, Any]):
@@ -91,6 +142,11 @@ class ModelBuilder:
     def _check_new_factor_name(self, name: factorName):
         if name in self._factors:
             raise ModelBuilderError(f'Factor named "{name}" has already been added')
+
+    def _check_new_flow(self, flow: Flow):
+        for fl in self._flows:
+            if flow.is_similar(fl):
+                raise ModelBuilderError(f'Two Flows connect the same Stages')
 
     def _check_for_stage_name(self, name: stageName):
         if name not in self._stages:
@@ -114,17 +170,22 @@ class ModelBuilder:
         if new_names:
             raise ModelBuilderError(f'Factors with names: {new_names} are not defined')
 
+    def _check_factor(self, factor_data: Any):
+        if isinstance(factor_data, factorName):
+            self._check_for_factor_name(factor_data)
+        elif not Factor.may_be_factor(factor_data):
+            raise ModelBuilderError(f'Next value cannot be converted to a Factor: "{factor_data}"')
+
     def _prepare_start_stage(self, start_name: stageName) -> Stage:
         return self._stages[start_name]
 
-    def _get_factor(self, original_factor: factorName | factorValue) -> Factor | factorValue:
-        if isinstance(original_factor, factorName):
-            self._check_for_factor_name(original_factor)
-            return self._factors[original_factor]
+    def _prepare_factor(self, factor_data: factorName | factorValue) -> Factor | factorValue:
+        if isinstance(factor_data, factorName):
+            return self._factors[factor_data]
         else:
-            return original_factor
+            return factor_data
 
-    def _get_stage_factor_dict(self, source: stageName | stageNameFactorDict) -> dict[Stage, Any]:
+    def _prepare_stage_factor_dict(self, source: stageName | stageNameFactorDict) -> dict[Stage, Factor | factorValue]:
         if isinstance(source, stageName):
             stage_factor = self._get_one_stage_dict(source)
         else:
@@ -135,12 +196,28 @@ class ModelBuilder:
     def _get_one_stage_dict(self, source: stageName) -> dict[Stage, int]:
         return {self._stages[source]: 1}
 
-    def _get_many_stage_dict(self, original_dict: stageNameFactorDict) -> dict[Stage, Any]:
+    def _get_many_stage_dict(self, original_dict: stageNameFactorDict) -> dict[Stage, Factor | factorValue]:
         stage_factor = {}
         for stage_name, factor in original_dict.items():
             stage = self._stages[stage_name]
-            stage_factor[stage] = self._get_factor(factor)
+            stage_factor[stage] = self._prepare_factor(factor)
         return stage_factor
+
+    def _generate_model_name(self):
+        self._model_name = ''.join([st_name[0].upper() for st_name in self._stages.keys()])
+
+    def _check_completeness(self):
+        start_stages = [fl.start for fl in self._flows]
+        end_stages = [end for fl in self._flows for end in fl.ends]
+        used_stages = set(start_stages + end_stages)
+
+        not_used_stages = set(self._stages.values()) - used_stages
+        if not_used_stages:
+            raise ModelBuilderError(f'The following stages are not connected by Flows: {not_used_stages}')
+
+
+
+
 
             
 
