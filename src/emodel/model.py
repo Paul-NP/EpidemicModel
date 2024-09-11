@@ -219,58 +219,8 @@ class EpidemicModel:
 
         return results, flow_results
 
-    def to_json(self, struct_version: __struct_versions_types) -> str:
-        generators = {'kk_2024': self.__to_json_kk_2024}
-        if struct_version in generators:
-            return generators[struct_version]()
-        else:
-            raise EpidemicModelError('unknown json-structure version')
-
-    @classmethod
-    def from_json(cls, json_string: str, struct_version: __struct_versions_types) -> EpidemicModel:
-        parsers = {'kk_2024': cls.__from_json_kk_2024}
-
-        if struct_version in parsers:
-            return parsers[struct_version](json_string)
-        else:
-            raise EpidemicModelError('unknown json-structure version')
-
-    def __to_json_kk_2024(self) -> str:
-        return str(self)
-
-    @classmethod
-    def __from_json_kk_2024(cls, json_string: str) -> EpidemicModel:
-        structure = json.loads(json_string)
-        try:
-            raw_stages = structure['compartments']
-            raw_flows = structure['flows']
-
-            stages = [Stage(st['name'], st['population']) for st in raw_stages]
-            stages_dict = {st.name: st for st in stages}
-
-            flows = []
-            for r_flow in raw_flows:
-                start = stages_dict[r_flow['from']]
-
-                end_dict = {stages_dict[end['name']]: end['coef'] for end in r_flow['to']}
-                ind_dict: Optional[stageFactorDict]
-                if 'induction' in r_flow:
-                    ind_dict = {stages_dict[ind['name']]: float(ind['coef'])
-                                for ind in r_flow['induction']}
-                else:
-                    ind_dict = None
-                fl_factor = r_flow['coef']
-                flows.append(Flow(start, end_dict, fl_factor, ind_dict))
-
-            model = EpidemicModel(stages, flows)
-            return model
-
-        except Exception as e:
-            e.add_note('incorrect json structure in version "kk_2024"')
-            raise e
-
     def __str__(self):
         return f'Model({self._name})'
 
     def __repr__(self):
-        return f'Model({self._name}: {list(self._flows)})'
+        return f'Model({self._name}): {list(self._flows)}'

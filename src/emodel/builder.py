@@ -193,7 +193,7 @@ class ModelBuilder:
 
         return stage_factor
 
-    def _get_one_stage_dict(self, source: stageName) -> dict[Stage, int]:
+    def _get_one_stage_dict(self, source: stageName) -> dict[Stage, Factor | factorValue]:
         return {self._stages[source]: 1}
 
     def _get_many_stage_dict(self, original_dict: stageNameFactorDict) -> dict[Stage, Factor | factorValue]:
@@ -214,7 +214,6 @@ class ModelBuilder:
         not_used_stages = set(self._stages.values()) - used_stages
         if not_used_stages:
             raise ModelBuilderError(f'The following stages are not connected by Flows: {not_used_stages}')
-
 
 
 

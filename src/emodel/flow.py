@@ -30,7 +30,7 @@ class Flow:
             if isinstance(factor, Factor):
                 new_factors[stage] = factor
             else:
-                factor_name = f'{content[:3]}[{stage.name}]-{self}'
+                factor_name = f'{content[:3]}[{stage.name[0]}]-{self}'
                 new_factors[stage] = Factor(factor_name, factor)
 
         return new_factors
