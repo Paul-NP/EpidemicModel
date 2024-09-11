@@ -1,9 +1,8 @@
 import pytest
-from emodel import ModelBuilder
-from emodel.stage import StageError
-from emodel.builder import ModelBuilderError
-from emodel.factor import FactorError
-from emodel.model import EpidemicModel
+from epidemmo import ModelBuilder
+from epidemmo.stage import StageError
+from epidemmo.builder import ModelBuilderError
+from epidemmo.factor import FactorError
 
 
 @pytest.fixture()

@@ -1,5 +1,5 @@
 import pytest
-from emodel.stage import Stage, StageError
+from epidemmo.stage import Stage, StageError
 
 
 @pytest.mark.parametrize('name, num', [('S', 100), ('I', 1.0), ('Rec', 0)])

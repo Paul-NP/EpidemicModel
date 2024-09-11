@@ -1,6 +1,6 @@
-from emodel.stage import Stage, StageError
-from emodel.flow import Flow, FlowError
-from emodel.factor import Factor, FactorError
+from epidemmo.stage import Stage, StageError
+from epidemmo.flow import Flow, FlowError
+from epidemmo.factor import Factor, FactorError
 
 import pytest
 

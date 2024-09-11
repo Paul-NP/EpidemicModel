@@ -1,5 +1,5 @@
 import pytest
-from emodel.factor import Factor, FactorError
+from epidemmo.factor import Factor, FactorError
 
 
 @pytest.mark.parametrize('value, name', [(2, 'beta'), (0.1, 'gamma'), (-0.5, 'neg')])

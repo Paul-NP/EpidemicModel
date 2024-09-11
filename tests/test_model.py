@@ -1,4 +1,4 @@
-from emodel import ModelBuilder, Standard
+from epidemmo import ModelBuilder, Standard
 import pytest
 
 

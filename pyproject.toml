@@ -3,8 +3,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = 'emodel'
-version = '0.2.0'
+name = 'epidemmo'
+version = '0.0.7'
 readme = 'readme.md'
 requires-python = '>=3.11'
 authors = [{name='Podzolkov Pavel', email='ppodzolkoff@gmail.com'}]
