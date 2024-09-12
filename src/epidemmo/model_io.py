@@ -68,18 +68,18 @@ class KK2024(VersionIO):
 class ModelIO:
     io_ways: dict[str, Type[VersionIO]] = {'kk_2024': KK2024}
 
-    def __init__(self, struct_version: Literal['kk_2024']):
+    def __init__(self, struct_version: Literal['kk_2024']) -> None:
         if struct_version not in self.io_ways:
             raise ModelIOError('Unknown structure version')
 
         self._io: VersionIO = self.io_ways[struct_version]()
 
-    def from_json(self, filename: str):
+    def from_json(self, filename: str) -> EpidemicModel:
         with open(filename, 'r', encoding='utf8') as file:
             json_string = file.read()
             return self._io.load(json_string)
 
-    def to_json(self, model: EpidemicModel, filename: str):
+    def to_json(self, model: EpidemicModel, filename: str) -> None:
         json_string = self._io.dump(model)
         with open(filename, 'w', encoding='utf8') as file:
             file.write(json_string)

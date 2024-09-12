@@ -12,7 +12,7 @@ class Factor:
     __MAX_NAME_LEN: int = 30
 
     @classmethod
-    def __check_name(cls, name: str):
+    def __check_name(cls, name: str) -> None:
         if not isinstance(name, str):
             raise FactorError('The factor name must be str')
         if len(name.split()) > 1:
@@ -21,7 +21,7 @@ class Factor:
             raise FactorError(f'The factor name "{name}" has an invalid length. Valid range '
                               f'[{cls.__MIN_NAME_LEN}, {cls.__MAX_NAME_LEN}]')
 
-    def __init__(self, name: str, value: int | float | Callable[[int], float]):
+    def __init__(self, name: str, value: int | float | Callable[[int], float]) -> None:
         self.__check_name(name)
 
         self._name: str = name
@@ -30,7 +30,7 @@ class Factor:
 
         self.set_fvalue(value)
 
-    def set_fvalue(self, value: int | float | Callable[[int], float]):
+    def set_fvalue(self, value: int | float | Callable[[int], float]) -> None:
         match value:
             case int(value) | float(value):
                 self._value = float(value)
@@ -59,7 +59,7 @@ class Factor:
         else:
             return False
 
-    def update(self, time: int):
+    def update(self, time: int) -> None:
         if self._func is not None:
             try:
                 res = self._func(time)
@@ -80,7 +80,7 @@ class Factor:
         return self._name
 
     @name.setter
-    def name(self, name: str):
+    def name(self, name: str) -> None:
         if not isinstance(name, str) or name == '':
             raise FactorError('invalid name for Factor, name must be not empty string')
         self._name = name

@@ -42,7 +42,7 @@ class Flow:
             return Factor(f'factor-{self}', factor_data)
 
     def __init__(self, start: Stage, end: stageFactorDict, flow_factor: anyFactor,
-                 inducing: stageFactorDict):
+                 inducing: stageFactorDict) -> None:
 
         self._name, self._full_name = self._generate_names(start.name, [e.name for e in end.keys()],
                                                            [i.name for i in inducing.keys()])
@@ -50,7 +50,7 @@ class Flow:
         flow_factor = self._prepare_flow_factor(flow_factor)
         ind_dict = self._prepare_factors_dict(inducing, 'inducing')
 
-        self._population_size: Optional[float | int] = None
+        self._population_size: float = 1.0
         self._relativity_factors: bool = False
 
         self._start: Stage = start
@@ -61,13 +61,13 @@ class Flow:
         self._change_in: float = 0
         self._submit_func: Callable = self._teor_submit
 
-    def set_population_size(self, population_size: int | float):
+    def set_population_size(self, population_size: float) -> None:
         self._population_size = population_size
 
-    def set_relativity_factors(self, relativity: bool):
+    def set_relativity_factors(self, relativity: bool) -> None:
         self._relativity_factors = relativity
 
-    def set_method(self, method: flowMethod):
+    def set_method(self, method: flowMethod) -> None:
         if method == self.TEOR_METHOD:
             self._submit_func = self._teor_submit
         elif method == self.STOCH_METHOD:
@@ -75,7 +75,7 @@ class Flow:
         else:
             raise FlowError(f'flow have not calculation method = {method}')
 
-    def _calc_flow_probability(self):
+    def _calc_flow_probability(self) -> None:
         if self._ind_dict:
             flow_factor = self._flow_factor.value
             if not self._relativity_factors:
@@ -86,29 +86,29 @@ class Flow:
             flow_probability = self._flow_factor.value
         self._flow_probability = flow_probability
 
-    def calc_send_probability(self):
+    def calc_send_probability(self) -> None:
         self._calc_flow_probability()
         self._start.add_probability_out(self, self._flow_probability)
 
-    def set_change_in(self, value: float):
+    def set_change_in(self, value: float) -> None:
         self._change_in = value
 
-    def submit_changes(self):
+    def submit_changes(self) -> float:
         return self._submit_func()
 
-    def check_end_factors(self):
+    def check_end_factors(self) -> None:
         s = sum(f.value for f in self._end_dict.values())
         if abs(s - 1) > self._accuracy:
             raise FlowError(f'{self} sum of out probabilities not equal 1 ({s})')
 
-    def _teor_submit(self):
+    def _teor_submit(self) -> float:
         self._start.add_change(-self._change_in)
         for end, f in self._end_dict.items():
             end.add_change(f.value * self._change_in)
         return self._change_in
 
-    def _stoch_submit(self):
-        sum_ch = 0
+    def _stoch_submit(self) -> float:
+        sum_ch = 0.0
         for end, f in self._end_dict.items():
             ch = poisson.rvs(mu=f.value * self._change_in)
             sum_ch_new = sum_ch + ch
@@ -137,12 +137,12 @@ class Flow:
         return all_factors
 
     @staticmethod
-    def _generate_names(start_name: str, end_names: list[str], ind_names: list[str]):
+    def _generate_names(start_name: str, end_names: list[str], ind_names: list[str]) -> tuple[str, str]:
         ends = ','.join(sorted(end_names))
         induced = ','.join(sorted(ind_names))
         return f'F({start_name}>{ends})', f'F({start_name}>{ends}|by-{induced})'
 
-    def is_similar(self, other: Flow):
+    def is_similar(self, other: Flow) -> bool:
         if self._start != other._start:
             return False
         if set(self._end_dict.keys()) & set(other._end_dict.keys()):

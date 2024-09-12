@@ -20,7 +20,7 @@ class ModelBuilderError(Exception):
 
 
 class ModelBuilder:
-    def __init__(self):
+    def __init__(self) -> None:
         self._stages: dict[str, Stage] = {}
         self._factors: dict[str, Factor] = {}
         self._flows: list[Flow] = []

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Sequence, Literal, Optional
+from typing import Sequence, Literal, Optional, Callable
 
 from .factor import Factor, FactorError
 from .stage import Stage, StageError
@@ -24,7 +24,7 @@ class EpidemicModel:
     __struct_versions = ['kk_2024']
     __struct_versions_types = Literal['kk_2024']
 
-    def __init__(self, name: str, stages: list[Stage], flows: list[Flow], relativity_factors: bool):
+    def __init__(self, name: str, stages: list[Stage], flows: list[Flow], relativity_factors: bool) -> None:
         """
         EpidemicModel - compartmental epidemic model
         :param stages: list of Stages
@@ -49,7 +49,7 @@ class EpidemicModel:
         except Exception as e:
             raise type(e)(f'In init model: {e}')
 
-    def _model_step(self, step: int):
+    def _model_step(self, step: int) -> None:
         # print(f'step #{step} start')
         for fa in self._factors:
             fa.update(step)
@@ -76,17 +76,17 @@ class EpidemicModel:
         old_flows = self._flows_df.loc[step] if step in self._flows_df.index else 0
         self._flows_df.loc[step] = old_flows + np.array(fl_changes)
 
-    def _set_population_size_flows(self, population_size: int | float):
+    def _set_population_size_flows(self, population_size: float) -> None:
         for flow in self._flows:
             flow.set_population_size(population_size)
 
-    def set_relativity_factors(self, relativity: bool):
+    def set_relativity_factors(self, relativity: bool) -> None:
         if not isinstance(relativity, bool):
             raise EpidemicModelError('relativity_factors must be bool')
         for fl in self._flows:
             fl.set_relativity_factors(relativity)
 
-    def start(self, time: int, stochastic_time=False, stochastic_changes=False, **kwargs):
+    def start(self, time: int, stochastic_time=False, stochastic_changes=False, **kwargs) -> pd.DataFrame:
         step = -1
         try:
             population_size = sum(st.num for st in self._stages)
@@ -128,7 +128,7 @@ class EpidemicModel:
         except (FlowError, FactorError, StageError) as e:
             raise type(e)(f'in {"start" if step is None else "step " + str(step)}: {e}')
 
-    def _get_table(self, table_df: pd.DataFrame):
+    def _get_table(self, table_df: pd.DataFrame) -> PrettyTable:
         table = PrettyTable()
         table.add_column('step', table_df.index.tolist())
         for col in table_df:
@@ -136,46 +136,47 @@ class EpidemicModel:
         table.float_format = f".{self.__len_float}"
         return table
 
-    def print_result_table(self):
+    def print_result_table(self) -> None:
         print(self._get_table(self._result_df))
 
-    def print_factors_table(self):
+    def print_factors_table(self) -> None:
         print(self._get_table(self._factors_df))
 
-    def print_flows_table(self):
+    def print_flows_table(self) -> None:
         print(self._get_table(self._flows_df))
 
-    def print_full_result(self):
+    def print_full_result(self) -> None:
         print(self._get_table(self.full_df))
 
     @property
-    def name(self):
+    def name(self) -> str:
         return self._name
 
     @property
-    def result_df(self):
-        return self._result_df.copy()
+    def result_df(self) -> pd.DataFrame:
+        return self._result_df.copy(deep=True)
 
     @property
-    def factors_df(self):
-        return self._factors_df.copy()
+    def factors_df(self) -> pd.DataFrame:
+        return self._factors_df.copy(deep=True)
 
     @property
-    def flows_df(self):
-        return self._flows_df.copy()
+    def flows_df(self) -> pd.DataFrame:
+        return self._flows_df.copy(deep=True)
 
     @property
-    def full_df(self):
+    def full_df(self) -> pd.DataFrame:
         df = pd.concat([self._result_df, self._flows_df, self._factors_df], axis=1)
         df.sort_index(inplace=True)
         return df
 
-    def _write_table(self, filename: str, table: pd.DataFrame, floating_point='.', delimiter=','):
+    def _write_table(self, filename: str, table: pd.DataFrame, floating_point='.', delimiter=',') -> None:
         table.to_csv(filename, sep=delimiter, decimal=floating_point,
                      float_format=f'%.{self.__len_float}f', index_label='step')
 
     def write_results(self, floating_point='.', delimiter=',', path: str = '',
-                      write_flows: bool = False, write_factors: bool = False):
+                      write_flows: bool = False, write_factors: bool = False) -> None:
+
         if path and path[-1] != '\\':
             path = path + '\\'
 
@@ -187,7 +188,7 @@ class EpidemicModel:
         if write_factors:
             self._write_table(f'{first_part}_factors.csv', self._factors_df, floating_point, delimiter)
 
-    def set_factors(self, **kwargs):
+    def set_factors(self, **kwargs) -> dict[Factor, Callable[[int], float] | float]:
         old_factor_values = {}
         for f in self._factors:
             if f.name in kwargs:
@@ -196,31 +197,13 @@ class EpidemicModel:
 
         return old_factor_values
 
-    def set_start_stages(self, **kwargs):
+    def set_start_stages(self, **kwargs) -> None:
         for s in self._stages:
             if s.name in kwargs:
                 s.num = kwargs[s.name]
 
-    def several_stoch_runs(self, n: int, time: int, stochastic_time=True, stochastic_changes=True, **kwargs):
-
-        if not isinstance(n, int) or not isinstance(time, int):
-            raise EpidemicModelError(f'several_stoch_runs expect two int but have {type(n)}, {type(time)}')
-
-        results = {s.name: pd.DataFrame() for s in self._stages}
-        flow_results = {str(fl): pd.DataFrame() for fl in self._flows}
-        for i in range(1, n + 1):
-            print(f'stochastic run number {i:>4}')
-            self.start(time, stochastic_time=stochastic_time, stochastic_changes=stochastic_changes, **kwargs)
-            for st_name in self._result_df:
-                results[st_name] = pd.concat([results[st_name], self._result_df[st_name]], axis=1)
-
-            for fl_name in self._flows_df:
-                flow_results[fl_name] = pd.concat([flow_results[fl_name], self._flows_df[fl_name]], axis=1)
-
-        return results, flow_results
-
-    def __str__(self):
+    def __str__(self) -> str:
         return f'Model({self._name})'
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f'Model({self._name}): {list(self._flows)}'
