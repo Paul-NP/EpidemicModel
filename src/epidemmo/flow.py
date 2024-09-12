@@ -160,5 +160,13 @@ class Flow:
         return self._start
 
     @property
-    def ends(self) -> list[Stage]:
-        return list(self._end_dict.keys())
+    def ends(self) -> dict[Stage, Factor]:
+        return self._end_dict
+
+    @property
+    def factor(self) -> Factor:
+        return self._flow_factor
+
+    @property
+    def inducing(self) -> dict[Stage, Factor]:
+        return self._ind_dict

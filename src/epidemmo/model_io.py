@@ -1,5 +1,5 @@
+from dataclasses import dataclass
 from typing import Callable, Literal, Union, Type, TypeAlias
-import abc
 from .model import EpidemicModel
 from .builder import ModelBuilder, ModelBuilderError
 
@@ -13,7 +13,7 @@ class ModelIOError(Exception):
     pass
 
 
-class VersionIO(abc.ABC):
+class AbstractIO:
     def load(self, source: str) -> EpidemicModel:
         try:
             return self._parse(source)
@@ -29,16 +29,14 @@ class VersionIO(abc.ABC):
         except Exception as e:
             raise ModelIOError(f'While jsonIO dumping model: {str(e)}')
 
-    @abc.abstractmethod
     def _parse(self, source: str) -> EpidemicModel:
-        pass
+        raise ModelIOError(f'{type(self)} does not support file parsing')
 
-    @abc.abstractmethod
     def _generate(self, model: EpidemicModel) -> str:
-        pass
+        raise ModelIOError(f'{type(self)} does not support file generation')
 
 
-class KK2024(VersionIO):
+class KK2024(AbstractIO):
     def _parse(self, source: str) -> EpidemicModel:
         structure = json.loads(source)
         raw_stages = structure['compartments']
@@ -61,26 +59,45 @@ class KK2024(VersionIO):
 
         return builder.build()
 
+
+class SimpleModel(AbstractIO):
+    def _parse(self, source: str) -> EpidemicModel:
+        structure = json.loads(source)
+
+        builder = ModelBuilder()
+        builder.set_model_name(str(structure['model_name']))
+
+        stages = {str(st['name']): float(st['num']) for st in structure['stages']}
+        builder.add_stages(**stages)
+
+        factors = {str(fa['name']): float(fa['value']) for fa in structure['factors']}
+        builder.add_factors(**factors)
+
+        for fl in structure['flows']:
+            builder.add_flow(**fl)
+
+        return builder.build()
+
     def _generate(self, model: EpidemicModel) -> str:
-        raise ModelIOError(f'kk_2024 does not support file generation')
+        structure = {'stages': model.stages, 'factors': model.factors, 'flows': model.flows}
+        return json.dumps(structure, indent=4)
 
 
 class ModelIO:
-    io_ways: dict[str, Type[VersionIO]] = {'kk_2024': KK2024}
+    io_ways: dict[str, Type[AbstractIO]] = {'kk_2024': KK2024, 'simple': SimpleModel}
 
-    def __init__(self, struct_version: Literal['kk_2024']) -> None:
+    def __init__(self, struct_version: Literal['kk_2024'] = 'simple') -> None:
         if struct_version not in self.io_ways:
             raise ModelIOError('Unknown structure version')
 
-        self._io: VersionIO = self.io_ways[struct_version]()
+        self._io: AbstractIO = self.io_ways[struct_version]()
 
-    def from_json(self, filename: str) -> EpidemicModel:
+    def load(self, filename: str) -> EpidemicModel:
         with open(filename, 'r', encoding='utf8') as file:
             json_string = file.read()
             return self._io.load(json_string)
 
-    def to_json(self, model: EpidemicModel, filename: str) -> None:
+    def save(self, model: EpidemicModel, filename: str) -> None:
         json_string = self._io.dump(model)
         with open(filename, 'w', encoding='utf8') as file:
             file.write(json_string)
-

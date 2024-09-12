@@ -1,4 +1,4 @@
-# Package emodel
+# Package epidemmo
 
 A package for epidemiological modeling based on a compartmental approach.
 

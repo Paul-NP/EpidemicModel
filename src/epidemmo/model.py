@@ -207,3 +207,21 @@ class EpidemicModel:
 
     def __repr__(self) -> str:
         return f'Model({self._name}): {list(self._flows)}'
+
+    @property
+    def stages(self) -> list[dict[str, float]]:
+        return [{'name': st.name, 'num': st.start_num} for st in self._stages]
+
+    @property
+    def factors(self) -> list[dict[str, float]]:
+        return [{'name': fa.name, 'value': 'dynamic' if fa.is_dynamic else fa.value} for fa in self._factors]
+
+    @property
+    def flows(self) -> list[dict]:
+        flows = []
+        for fl in self._flows:
+            fl_dict = {'start': fl.start.name, 'factor': fl.factor.name,
+                       'end': {st.name: fa.name for st, fa in fl.ends.items()},
+                       'inducing': {st.name: fa.name for st, fa in fl.inducing.items()}}
+            flows.append(fl_dict)
+        return flows

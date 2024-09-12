@@ -88,6 +88,10 @@ class Stage:
     def num(self) -> float:
         return self._current_num
 
+    @property
+    def start_num(self) -> float:
+        return self._start_num
+
     @num.setter
     def num(self, value: int) -> None:
         self._check_value(value)

@@ -208,7 +208,7 @@ class ModelBuilder:
 
     def _check_completeness(self):
         start_stages = [fl.start for fl in self._flows]
-        end_stages = [end for fl in self._flows for end in fl.ends]
+        end_stages = [end for fl in self._flows for end in fl.ends.keys()]
         used_stages = set(start_stages + end_stages)
 
         not_used_stages = set(self._stages.values()) - used_stages
