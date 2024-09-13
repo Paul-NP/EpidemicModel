@@ -36,7 +36,7 @@ class AbstractIO:
         raise ModelIOError(f'{type(self)} does not support file generation')
 
 
-class KK2024(AbstractIO):
+class KK2024IO(AbstractIO):
     def _parse(self, source: str) -> EpidemicModel:
         structure = json.loads(source)
         raw_stages = structure['compartments']
@@ -60,12 +60,12 @@ class KK2024(AbstractIO):
         return builder.build()
 
 
-class SimpleModel(AbstractIO):
+class SimpleIO(AbstractIO):
     def _parse(self, source: str) -> EpidemicModel:
         structure = json.loads(source)
 
         builder = ModelBuilder()
-        builder.set_model_name(str(structure['model_name']))
+        builder.set_model_name(str(structure['name']))
 
         stages = {str(st['name']): float(st['num']) for st in structure['stages']}
         builder.add_stages(**stages)
@@ -79,14 +79,14 @@ class SimpleModel(AbstractIO):
         return builder.build()
 
     def _generate(self, model: EpidemicModel) -> str:
-        structure = {'stages': model.stages, 'factors': model.factors, 'flows': model.flows}
+        structure = {'name': model.name, 'stages': model.stages, 'factors': model.factors, 'flows': model.flows}
         return json.dumps(structure, indent=4)
 
 
 class ModelIO:
-    io_ways: dict[str, Type[AbstractIO]] = {'kk_2024': KK2024, 'simple': SimpleModel}
+    io_ways: dict[str, Type[AbstractIO]] = {'kk_2024': KK2024IO, 'simple_io': SimpleIO}
 
-    def __init__(self, struct_version: Literal['kk_2024'] = 'simple') -> None:
+    def __init__(self, struct_version: Literal['kk_2024', 'simple_io'] = 'simple_io') -> None:
         if struct_version not in self.io_ways:
             raise ModelIOError('Unknown structure version')
 

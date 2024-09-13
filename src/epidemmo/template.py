@@ -25,7 +25,7 @@ class Standard:
 
     @staticmethod
     def SIRS_builder() -> ModelBuilder:
-        builder = ModelBuilder().add_stages(S=100, I=1, R=0).add_factors(beta=0.4, gamma=0.1, delta=0.1)
+        builder = ModelBuilder().add_stages(S=100, I=1, R=0).add_factors(beta=0.5, gamma=0.2, delta=0.01)
         builder.add_flow('S', 'I', 'beta', 'I').add_flow('I', 'R', 'gamma').add_flow('R', 'S', 'delta')
         builder.set_model_name('SIRS')
         return builder
