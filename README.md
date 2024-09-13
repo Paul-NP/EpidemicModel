@@ -1,14 +1,16 @@
-# Package epidemmo
+# Пакет epidemmo
 
-A package for epidemiological modeling based on a compartmental approach.
+Пакет для создания эпидемиологических моделей.
+Структура создаваемых моделей основана на идеях компартментального моделирования.
 
-## Import package
+
+## Импорт пакета
 
 ```python
 import epidemmo
 ```
 
-## Сreating a simple SIR model
+## Создание простой SIR модели
 
 ```python
 from epidemmo import ModelBuilder
@@ -26,51 +28,53 @@ result_df.plot(title='SIR', ylabel='population', xlabel='time')
 plt.show()
 ```
 
-`start(70)` - the start method, which takes the simulation duration, returns a pandas.DataFrame with the simulation results.
+`start(70)` - метод, который принимает длительность моделирования, а возвращает pd.DataFrame с результатами моделирования.
 
-### Simulation result
+
+### Результаты моделирования
 
 ![sir example](https://raw.githubusercontent.com/Paul-NP/EpidemicModel/master/documentation/images/sir_example.png)
 
-## Use standard models
+## Использование стандартных моделей
 
-The package contains several standard epidemiological models.
+Пакет содержит несколько стандартных эпидемиологических моделей.
 
 ```python
 from epidemmo import Standard
 
-model = Standard.SIR_builder().build()
+model = Standard.get_SIR_builder().build()
 result = model.start(40)
 ```
-
-You can change start num for every stage.
-Also you can change Factor's values.
+Вы можете изменить стартовую численность каждой стадии, а также изменить значение параметров модели.
 
 ```python
 from epidemmo import Standard
 
-model = Standard.SIR_builder().build()
+model = Standard.get_SIR_builder().build()
 model.set_start_stages(S=1000, I=10, R=0)
 model.set_factors(beta=0.5)
 ```
 
-## Print and write results table
+## Вывод и запись табличных результатов
 
-After using the model you can print result table in console.
+После запуска модели Вы можете вывести результаты в виде таблицы (PrettyTable) в консоль.
 
 ```python
 from epidemmo import Standard
 
-model = Standard.SIR_builder().build()
+model = Standard.get_SIR_builder().build()
 model.start(60)
 model.print_result_table()
 ```
-or writing result in csv files
+или записать результаты в csv файлы, включая
+1. файл с изменением численности каждой стадии
+2. файл с изменением значений всех параметров во времени
+3. файл с изменением интенсивности потоков модели во времени
 
 ```python
 from epidemmo import Standard
 
-model = Standard.SIR_builder().build()
+model = Standard.get_SIR_builder().build()
 model.start(60)
 model.write_results()
 ```

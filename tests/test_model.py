@@ -26,21 +26,21 @@ def test_sir_fast_create():
 
 @pytest.mark.parametrize('time, s, i, r', [(0, 100, 1, 0), (10, 85, 11, 4), (30, 7, 27, 67)])
 def test_standard_sir(time, s, i, r):
-    model = Standard.SIR_builder().build()
+    model = Standard.get_SIR_builder().build()
     result = model.start(40)
     assert tuple(result.loc[time]) == pytest.approx((s, i, r), abs=1)
 
 
 @pytest.mark.parametrize('time, s, e, i, r', [(0, 100, 0, 1, 0), (10, 96, 2, 1, 1), (30, 73, 12, 7, 8)])
 def test_standard_seir(time, s, e, i, r):
-    model = Standard.SEIR_builder().build()
+    model = Standard.get_SEIR_builder().build()
     result = model.start(40)
     assert tuple(result.loc[time]) == pytest.approx((s, e, i, r), abs=1)
 
 
 @pytest.mark.parametrize('time, s, i, r', [(0, 100, 1, 0), (10, 83, 11, 8), (30, 14, 8, 78)])
 def test_sir_changed(time, s, i, r):
-    model = Standard.SIR_builder().build()
+    model = Standard.get_SIR_builder().build()
     model.set_factors(beta=0.5, gamma=0.2)
     result = model.start(40)
     assert tuple(result.loc[time]) == pytest.approx((s, i, r), abs=1)
