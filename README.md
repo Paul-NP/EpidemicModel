@@ -122,4 +122,4 @@ print(latex_str_simplified)
 ``` 
 Для компиляции необходимо подключить пакет `amsmath` 
 Результат компиляции LaTex выглядит следующим образом:
-![equation example](documentation/images/equations_example.png)
+![equation example](https://raw.githubusercontent.com/Paul-NP/EpidemicModel/master/documentation/images/equations_example.png)
