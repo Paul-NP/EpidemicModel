@@ -27,10 +27,17 @@ class Factor:
         self._name: str = name
         self._value: float = 0
         self._func: Optional[Callable[[int], float]] = None
+        self._latex_repr: Optional[str] = None
+
+        self._previous_fvalue: Optional[Callable[[int], float] | float] = None
 
         self.set_fvalue(value)
 
-    def set_fvalue(self, value: int | float | Callable[[int], float]) -> None:
+    def set_fvalue(self, value: int | float | Callable[[int], float], save_previous: bool = False) -> None:
+        if save_previous:
+            self._previous_fvalue = self.get_fvalue()
+        else:
+            self._previous_fvalue = None
         match value:
             case int(value) | float(value):
                 self._value = float(value)
@@ -45,6 +52,10 @@ class Factor:
         if self._func is not None:
             return self._func
         return self._value
+
+    def restore_value(self) -> None:
+        if self._previous_fvalue is not None:
+            self.set_fvalue(self._previous_fvalue, save_previous=False)
 
     @staticmethod
     def may_be_factor(value: Any) -> bool:
@@ -87,6 +98,16 @@ class Factor:
 
     def __str__(self) -> str:
         return self._name
+
+    def set_latex_repr(self, latex_repr: Optional[str]) -> None:
+        if latex_repr is not None and not isinstance(latex_repr, str):
+            raise FactorError('latex_repr must be str or None')
+        self._latex_repr = latex_repr
+
+    def get_latex_repr(self) -> str:
+        if self._latex_repr is None:
+            return self._name
+        return self._latex_repr
 
     @staticmethod
     def func_by_keyframes(keyframes: dict[int, float | int],

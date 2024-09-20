@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from .flow import Flow
@@ -44,6 +44,10 @@ class Stage:
         self._start_num: float = float(start_num)
         self._changes: list[float | int] = []
         self._probability_out: dict[Flow, float] = {}
+
+        self._latex_repr: Optional[str] = None
+        self._latex_outs: list[str] = []
+        self._latex_inputs: list[str] = []
 
     def _correct_probabilities(self) -> None:
         probs = list(self._probability_out.values())
@@ -106,3 +110,30 @@ class Stage:
 
     def __repr__(self) -> str:
         return f"Stage({self._name}) | {self._current_num:.{self.__FLOAT_LEN}f}"
+
+    def add_latex_out(self, term: str) -> None:
+        self._latex_outs.append(term)
+
+    def add_latex_input(self, term: str) -> None:
+        self._latex_inputs.append(term)
+
+    def set_latext_repr(self, latex_repr: Optional[str]) -> None:
+        self._latex_repr = latex_repr
+
+    def get_latex_repr(self) -> str:
+        if self._latex_repr is None:
+            return self._name
+        return self._latex_repr
+
+    def get_latex_equation(self) -> str:
+        positive_terms = '+'.join(self._latex_inputs)
+        negative_terms = '-'.join(self._latex_outs)
+        if negative_terms:
+            negative_terms = f' - {negative_terms}'
+        summa = positive_terms + negative_terms
+
+        equation = f'\\frac{{d{self.get_latex_repr()}}}{{dt}} = {summa}'
+        return equation
+
+
+

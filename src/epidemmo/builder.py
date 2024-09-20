@@ -29,11 +29,13 @@ class ModelBuilder:
         self._model_name: str = ''
         self._manual_name: bool = False
 
-    def add_stage(self, name: stageName, start_num: int | float = 0) -> ModelBuilder:
+    def add_stage(self, name: stageName, start_num: int | float = 0, *,
+                  latex_repr: Optional[str] = None) -> ModelBuilder:
         self._check_name(name)
         self._check_new_stage_name(name)
 
         new_stage = Stage(name, start_num)
+        new_stage.set_latext_repr(latex_repr)
         self._stages[name] = new_stage
         return self
 
@@ -42,11 +44,13 @@ class ModelBuilder:
             self.add_stage(name, value)
         return self
 
-    def add_factor(self, name: factorName, value: factorValue) -> ModelBuilder:
+    def add_factor(self, name: factorName, value: factorValue, *,
+                   latex_repr: Optional[str] = None) -> ModelBuilder:
         self._check_name(name)
         self._check_new_factor_name(name)
 
         new_factor = Factor(name, value)
+        new_factor.set_latex_repr(latex_repr)
         self._factors[name] = new_factor
         return self
 
@@ -101,6 +105,8 @@ class ModelBuilder:
         flows = self._flows
 
         model = EpidemicModel(self._model_name, stages, flows, self._relativity_factors)
+        model.start(1)
+        model.drop_result()
         return model
 
     def _check_start(self, start: Any):
