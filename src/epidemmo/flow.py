@@ -151,15 +151,15 @@ class Flow:
 
         return all_factors
 
-    def send_latex_terms(self) -> None:
-        self._send_latex_out()
-        self._send_latex_input()
+    def send_latex_terms(self, simplified: bool) -> None:
+        self._send_latex_out(simplified)
+        self._send_latex_input(simplified)
 
-    def _send_latex_out(self) -> None:
-        self._start.add_latex_out(self._get_latex_repr())
+    def _send_latex_out(self, simplified: bool) -> None:
+        self._start.add_latex_out(self._get_latex_repr(simplified))
 
-    def _send_latex_input(self) -> None:
-        full_repr = self._get_latex_repr()
+    def _send_latex_input(self, simplified: bool) -> None:
+        full_repr = self._get_latex_repr(simplified)
         if len(self._end_dict.items()) > 1:
             for end, fa in self._end_dict.items():
                 end.add_latex_input(f'{full_repr} \\cdot {fa.get_latex_repr()}')
@@ -167,22 +167,30 @@ class Flow:
             for end, fa in self._end_dict.items():
                 end.add_latex_input(f'{full_repr}')
 
-    def _get_latex_repr(self) -> str:
+    def _get_latex_repr(self, simplified: bool) -> str:
         if self._ind_dict:
-            if self._relativity_factors:
+            inducing_part = self._get_inducing_part(simplified)
+            factor = self._flow_factor.get_latex_repr()
+            if simplified:
+                result = f'{self.start.get_latex_repr()} \\cdot {factor} \\cdot {inducing_part}'
+                if not self._relativity_factors:
+                    return f'\\frac{{{result}}}{{N}}'
+                return result
+
+            if not self._relativity_factors:
                 factor = f'\\frac{{{self._flow_factor.get_latex_repr()}}}{{N}}'
-            else:
-                factor = self._flow_factor.get_latex_repr()
-            ind_exponent = self._get_inducing_exponent()
-            return f'{self.start.get_latex_repr()} \\cdot (1 - (1 - {factor})^{{{ind_exponent}}})'
+
+            return f'{self.start.get_latex_repr()} \\cdot (1 - (1 - {factor})^{{{inducing_part}}})'
         else:
             return f'{self.start.get_latex_repr()} \\cdot {self._flow_factor.get_latex_repr()}'
 
-    def _get_inducing_exponent(self) -> str:
+    def _get_inducing_part(self, simplified: bool) -> str:
         if len(self._ind_dict) == 1:
             return ''.join([st.get_latex_repr() for st in self._ind_dict.keys()])
         result = ' + '.join([f'{st.get_latex_repr()} \\cdot {fa.get_latex_repr()}'
                              for st, fa in self._ind_dict.items()])
+        if simplified:
+            return f'({result})'
         return result
 
     @staticmethod

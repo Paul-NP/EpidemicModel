@@ -246,12 +246,12 @@ class EpidemicModel:
             flows.append(fl_dict)
         return flows
 
-    def get_latex(self) -> str:
+    def get_latex(self, simplified: bool = False) -> str:
         for fl in self._flows:
-            fl.send_latex_terms()
+            fl.send_latex_terms(simplified)
 
         tab = '    '
-        system_of_equations = f'\\begin{{equation}}\\label{{eq:{self._name}}}\n'
+        system_of_equations = f'\\begin{{equation}}\\label{{eq:{self._name}_{'classic' if simplified else 'full'}}}\n'
         system_of_equations += f'{tab}\\begin{{cases}}\n'
 
         for st in self._stages:
@@ -259,5 +259,9 @@ class EpidemicModel:
 
         system_of_equations += f'{tab}\\end{{cases}}\n'
         system_of_equations += f'\\end{{equation}}\n'
+
+        for st in self._stages:
+            st.clear_latex_terms()
+
         return system_of_equations
 

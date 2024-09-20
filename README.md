@@ -78,3 +78,48 @@ model = Standard.get_SIR_builder().build()
 model.start(60)
 model.write_results()
 ```
+
+## Получение системы Latex уравнений 
+
+Вы можете получить Latex уравнения модели.
+Для этого при добавлении факторов необходимо указать свойство `latex_repr`.
+Вы можете использовать параметр `simplified` для упрощения уравнений (представления в классическом варианте).
+
+```python
+from epidemmo import ModelBuilder
+
+builder = ModelBuilder()
+builder.add_stage('S', 100).add_stage('I', 1).add_stage('R')
+builder.add_factor('beta', 0.4, latex_repr=r'\beta').add_factor('gamma', 0.1, latex_repr=r'\gamma')
+builder.add_flow('S', 'I', 'beta', 'I').add_flow('I', 'R', 'gamma')
+
+model = builder.build()
+
+latex_str = model.get_latex()
+print(latex_str)
+
+latex_str_simplified = model.get_latex(simplified=True)
+print(latex_str_simplified)
+```
+Будут сформированы следующие системы дифференциальных уравнений:
+
+```latex
+\begin{equation}\label{eq:SIR_full}
+    \begin{cases}
+        \frac{dS}{dt} =  - S \cdot (1 - (1 - \frac{\beta}{N})^{I})\\
+        \frac{dI}{dt} = S \cdot (1 - (1 - \frac{\beta}{N})^{I}) - I \cdot \gamma\\
+        \frac{dR}{dt} = I \cdot \gamma\\
+    \end{cases}
+\end{equation}
+
+\begin{equation}\label{eq:SIR_classic}
+    \begin{cases}
+        \frac{dS}{dt} =  - \frac{S \cdot \beta \cdot I}{N}\\
+        \frac{dI}{dt} = \frac{S \cdot \beta \cdot I}{N} - I \cdot \gamma\\
+        \frac{dR}{dt} = I \cdot \gamma\\
+    \end{cases}
+\end{equation}
+``` 
+Для компиляции необходимо подключить пакет `amsmath` 
+Результат компиляции LaTex выглядит следующим образом:
+![equation example](documentation/images/equations_example.png)

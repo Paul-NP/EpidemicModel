@@ -135,5 +135,9 @@ class Stage:
         equation = f'\\frac{{d{self.get_latex_repr()}}}{{dt}} = {summa}'
         return equation
 
+    def clear_latex_terms(self):
+        self._latex_inputs.clear()
+        self._latex_outs.clear()
+
 
 
