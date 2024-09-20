@@ -87,6 +87,7 @@ class ModelIO:
     io_ways: dict[str, Type[AbstractIO]] = {'kk_2024': KK2024IO, 'simple_io': SimpleIO}
 
     def __init__(self, struct_version: Literal['kk_2024', 'simple_io'] = 'simple_io') -> None:
+
         if struct_version not in self.io_ways:
             raise ModelIOError('Unknown structure version')
 

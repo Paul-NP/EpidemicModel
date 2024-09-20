@@ -24,14 +24,26 @@ class Flow:
     TEOR_METHOD: flowMethod = 0
     STOCH_METHOD: flowMethod = 1
 
-    def _prepare_factors_dict(self, factors_data: dict[Stage, Factor | factorValue], content: str) -> dict[Stage, Factor]:
+    def _get_factor_latex_repr(self, current_stage: Stage, start: Stage, content: str) -> str:
+        if content == 'end':
+            return f'v_{{{start.name[0]}{current_stage.name[0]}}}'
+        else:
+            return f'e_{{{self._short_name}}}^{{({current_stage.name[0]})}}'
+
+    def _prepare_factors_dict(self, factors_data: dict[Stage, Factor | factorValue],
+                              content: str, start: Stage) -> dict[Stage, Factor]:
         new_factors = {}
         for stage, factor in factors_data.items():
             if isinstance(factor, Factor):
                 new_factors[stage] = factor
             else:
                 factor_name = f'{content[:3]}[{stage.name[0]}]-{self}'
-                new_factors[stage] = Factor(factor_name, factor)
+                factor = Factor(factor_name, factor)
+
+                factor_repr = self._get_factor_latex_repr(stage, start, content)
+
+                factor.set_latex_repr(factor_repr)
+                new_factors[stage] = factor
 
         return new_factors
 
@@ -39,16 +51,19 @@ class Flow:
         if isinstance(factor_data, Factor):
             return factor_data
         else:
-            return Factor(f'factor-{self}', factor_data)
+            factor = Factor(f'factor-{self}', factor_data)
+            factor.set_latex_repr(f'v_{{{self._short_name}}}')
+            return factor
 
     def __init__(self, start: Stage, end: stageFactorDict, flow_factor: anyFactor,
                  inducing: stageFactorDict) -> None:
 
         self._name, self._full_name = self._generate_names(start.name, [e.name for e in end.keys()],
                                                            [i.name for i in inducing.keys()])
-        end_dict = self._prepare_factors_dict(end, 'end')
+        self._short_name = start.name + ''.join(e.name for e in end.keys())
+        end_dict = self._prepare_factors_dict(end, 'end', start)
         flow_factor = self._prepare_flow_factor(flow_factor)
-        ind_dict = self._prepare_factors_dict(inducing, 'inducing')
+        ind_dict = self._prepare_factors_dict(inducing, 'inducing', start)
 
         self._population_size: float = 1.0
         self._relativity_factors: bool = False
@@ -135,6 +150,48 @@ class Flow:
             all_factors.append(fa)
 
         return all_factors
+
+    def send_latex_terms(self, simplified: bool) -> None:
+        self._send_latex_out(simplified)
+        self._send_latex_input(simplified)
+
+    def _send_latex_out(self, simplified: bool) -> None:
+        self._start.add_latex_out(self._get_latex_repr(simplified))
+
+    def _send_latex_input(self, simplified: bool) -> None:
+        full_repr = self._get_latex_repr(simplified)
+        if len(self._end_dict.items()) > 1:
+            for end, fa in self._end_dict.items():
+                end.add_latex_input(f'{full_repr} \\cdot {fa.get_latex_repr()}')
+        else:
+            for end, fa in self._end_dict.items():
+                end.add_latex_input(f'{full_repr}')
+
+    def _get_latex_repr(self, simplified: bool) -> str:
+        if self._ind_dict:
+            inducing_part = self._get_inducing_part(simplified)
+            factor = self._flow_factor.get_latex_repr()
+            if simplified:
+                result = f'{self.start.get_latex_repr()} \\cdot {factor} \\cdot {inducing_part}'
+                if not self._relativity_factors:
+                    return f'\\frac{{{result}}}{{N}}'
+                return result
+
+            if not self._relativity_factors:
+                factor = f'\\frac{{{self._flow_factor.get_latex_repr()}}}{{N}}'
+
+            return f'{self.start.get_latex_repr()} \\cdot (1 - (1 - {factor})^{{{inducing_part}}})'
+        else:
+            return f'{self.start.get_latex_repr()} \\cdot {self._flow_factor.get_latex_repr()}'
+
+    def _get_inducing_part(self, simplified: bool) -> str:
+        if len(self._ind_dict) == 1:
+            return ''.join([st.get_latex_repr() for st in self._ind_dict.keys()])
+        result = ' + '.join([f'{st.get_latex_repr()} \\cdot {fa.get_latex_repr()}'
+                             for st, fa in self._ind_dict.items()])
+        if simplified:
+            return f'({result})'
+        return result
 
     @staticmethod
     def _generate_names(start_name: str, end_names: list[str], ind_names: list[str]) -> tuple[str, str]:

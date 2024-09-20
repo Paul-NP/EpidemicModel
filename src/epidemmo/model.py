@@ -46,11 +46,13 @@ class EpidemicModel:
             self._factors_df: pd.DataFrame = pd.DataFrame(columns=[fa.name for fa in self._factors])
             self._flows_df: pd.DataFrame = pd.DataFrame(columns=[str(fl) for fl in self._flows])
 
+            self._current_step: int = -1
+
         except Exception as e:
             raise type(e)(f'In init model: {e}')
 
-    def _model_step(self, step: int) -> None:
-        # print(f'step #{step} start')
+    def _take_step(self, step: int) -> None:
+        self._current_step = step
         for fa in self._factors:
             fa.update(step)
             if fa.value < 0:
@@ -76,7 +78,8 @@ class EpidemicModel:
         old_flows = self._flows_df.loc[step] if step in self._flows_df.index else 0
         self._flows_df.loc[step] = old_flows + np.array(fl_changes)
 
-    def _set_population_size_flows(self, population_size: float) -> None:
+    def _set_population_size_flows(self) -> None:
+        population_size = sum(st.num for st in self._stages)
         for flow in self._flows:
             flow.set_population_size(population_size)
 
@@ -86,47 +89,68 @@ class EpidemicModel:
         for fl in self._flows:
             fl.set_relativity_factors(relativity)
 
+    def _drop_df(self):
+        self._result_df.drop(self._result_df.index, inplace=True)
+        self._factors_df.drop(self._factors_df.index, inplace=True)
+        self._flows_df.drop(self._flows_df.index, inplace=True)
+
+        self._result_df.loc[0] = [st.num for st in self._stages]
+
+    def _set_flows_method(self, stochastic: bool) -> None:
+        method = Flow.STOCH_METHOD if stochastic else Flow.TEOR_METHOD
+        for fl in self._flows:
+            fl.set_method(method)
+
+    def _stoch_run(self, time: int):
+        step = 0
+        while step < time:
+            self._take_step(step)
+            step += poisson.rvs(mu=1)
+
+    def _determ_run(self, time: int):
+        for step in range(0, time):
+            self._take_step(step)
+
+    def _reset_stage_nums(self):
+        for st in self._stages:
+            st.reset_num()
+
+    def _reindex_df(self, time: int):
+        full_index = np.arange(time + 1)
+        self._result_df = self._result_df.reindex(full_index, method='ffill')
+        self._flows_df = self._flows_df.reindex(full_index, fill_value=0)
+        self._factors_df = self._factors_df.reindex(full_index)
+
+    def _restore_factors(self):
+        for fa in self._factors:
+            fa.restore_value()
+
+    def drop_result(self):
+        self._drop_df()
+        self._restore_factors()
+        self._reset_stage_nums()
+
     def start(self, time: int, stochastic_time=False, stochastic_changes=False, **kwargs) -> pd.DataFrame:
-        step = -1
+        self._current_step = -1
         try:
-            population_size = sum(st.num for st in self._stages)
-            self._set_population_size_flows(population_size)
+            self._set_population_size_flows()  # устанавливаем размеры населения в каждом из потоков
+            self._drop_df()  # удаляем предыдущие значения в таблицах
+            self.set_factors(**kwargs)  # устанавливаем временные значения факторов
+            self._set_flows_method(stochastic_changes)  # устанавливаем метод расчета потоков
 
-            old_factor_values = self.set_factors(**kwargs)
-
-            self._result_df.drop(self._result_df.index, inplace=True)
-            self._factors_df.drop(self._factors_df.index, inplace=True)
-            self._flows_df.drop(self._flows_df.index, inplace=True)
-
-            self._result_df.loc[0] = [st.num for st in self._stages]
-            method = Flow.STOCH_METHOD if stochastic_changes else Flow.TEOR_METHOD
-            for fl in self._flows:
-                fl.set_method(method)
-
-            if stochastic_time:
-                step = 0
-                while step < time:
-                    self._model_step(step)
-                    step += poisson.rvs(mu=1)
-
+            if stochastic_time:  # если время моделирование стохастично
+                self._stoch_run(time)  # то запускаем моделирование стохастично
             else:
-                for step in range(0, time):
-                    self._model_step(step)
+                self._determ_run(time)  # иначе запускаем моделирование детерминированно
+            self._reindex_df(time)  # переиндексируем таблицы (заполняем пропуски)
 
-            for st in self._stages:
-                st.reset_num()
+            self._reset_stage_nums()  # сбрасываем счетчики в стадиях
+            self._restore_factors()  # восстанавливаем предыдущие значения факторов
 
-            for fa in old_factor_values:
-                fa.set_fvalue(old_factor_values[fa])
-
-            full_index = np.arange(time + 1)
-            self._result_df = self._result_df.reindex(full_index, method='ffill')
-            self._flows_df = self._flows_df.reindex(full_index, fill_value=0)
-            self._factors_df = self._factors_df.reindex(full_index)
             return self.result_df
 
         except (FlowError, FactorError, StageError) as e:
-            raise type(e)(f'in {"start" if step is None else "step " + str(step)}: {e}')
+            raise type(e)(f'in {"start" if self._current_step == -1 else "step " + str(self._current_step)}: {e}')
 
     def _get_table(self, table_df: pd.DataFrame) -> PrettyTable:
         table = PrettyTable()
@@ -188,14 +212,10 @@ class EpidemicModel:
         if write_factors:
             self._write_table(f'{first_part}_factors.csv', self._factors_df, floating_point, delimiter)
 
-    def set_factors(self, **kwargs) -> dict[Factor, Callable[[int], float] | float]:
-        old_factor_values = {}
+    def set_factors(self, **kwargs) -> None:
         for f in self._factors:
             if f.name in kwargs:
-                old_factor_values[f] = f.get_fvalue()
-                f.set_fvalue(kwargs[f.name])
-
-        return old_factor_values
+                f.set_fvalue(kwargs[f.name], save_previous=True)
 
     def set_start_stages(self, **kwargs) -> None:
         for s in self._stages:
@@ -225,3 +245,23 @@ class EpidemicModel:
                        'inducing': {st.name: fa.name for st, fa in fl.inducing.items()}}
             flows.append(fl_dict)
         return flows
+
+    def get_latex(self, simplified: bool = False) -> str:
+        for fl in self._flows:
+            fl.send_latex_terms(simplified)
+
+        tab = '    '
+        system_of_equations = f'\\begin{{equation}}\\label{{eq:{self._name}_{'classic' if simplified else 'full'}}}\n'
+        system_of_equations += f'{tab}\\begin{{cases}}\n'
+
+        for st in self._stages:
+            system_of_equations += f'{tab * 2}{st.get_latex_equation()}\\\\\n'
+
+        system_of_equations += f'{tab}\\end{{cases}}\n'
+        system_of_equations += f'\\end{{equation}}\n'
+
+        for st in self._stages:
+            st.clear_latex_terms()
+
+        return system_of_equations
+
