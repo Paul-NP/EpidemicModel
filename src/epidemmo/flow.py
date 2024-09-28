@@ -26,9 +26,9 @@ class Flow:
 
     def _get_factor_latex_repr(self, current_stage: Stage, start: Stage, content: str) -> str:
         if content == 'end':
-            return f'v_{{{start.name[0]}{current_stage.name[0]}}}'
+            return f'v_{{{start.name[0].lower()}{current_stage.name[0].lower()}}}'
         else:
-            return f'e_{{{self._short_name}}}^{{({current_stage.name[0]})}}'
+            return f'e_{{{current_stage.name[0].lower()},{self._short_name.lower()}}}'
 
     def _prepare_factors_dict(self, factors_data: dict[Stage, Factor | factorValue],
                               content: str, start: Stage) -> dict[Stage, Factor]:
@@ -170,28 +170,43 @@ class Flow:
     def _get_latex_repr(self, simplified: bool) -> str:
         if self._ind_dict:
             inducing_part = self._get_inducing_part(simplified)
-            factor = self._flow_factor.get_latex_repr()
             if simplified:
-                result = f'{self.start.get_latex_repr()} \\cdot {factor} \\cdot {inducing_part}'
+                result = f'{self.start.get_latex_repr()} \\cdot {inducing_part}'
                 if not self._relativity_factors:
                     return f'\\frac{{{result}}}{{N}}'
                 return result
 
-            if not self._relativity_factors:
-                factor = f'\\frac{{{self._flow_factor.get_latex_repr()}}}{{N}}'
-
-            return f'{self.start.get_latex_repr()} \\cdot (1 - (1 - {factor})^{{{inducing_part}}})'
+            return f'{self.start.get_latex_repr()} \\cdot {inducing_part}'
         else:
             return f'{self.start.get_latex_repr()} \\cdot {self._flow_factor.get_latex_repr()}'
 
     def _get_inducing_part(self, simplified: bool) -> str:
-        if len(self._ind_dict) == 1:
-            return ''.join([st.get_latex_repr() for st in self._ind_dict.keys()])
-        result = ' + '.join([f'{st.get_latex_repr()} \\cdot {fa.get_latex_repr()}'
-                             for st, fa in self._ind_dict.items()])
+        full_factor = self._get_inducing_factor_part()
+        simple_factor = self._flow_factor.get_latex_repr()
+
         if simplified:
-            return f'({result})'
-        return result
+            if len(self._ind_dict) == 1:
+                st, fa = next(iter(self._ind_dict.items()))
+                return f'{simple_factor} \\cdot {st.get_latex_repr()}'
+            else:
+                latex_sum = ' + '.join([f'{st.get_latex_repr()} \\cdot {fa.get_latex_repr()}'
+                                        for st, fa in self._ind_dict.items()])
+                return f'{simple_factor} \\cdot ({latex_sum})'
+        else:
+            if len(self._ind_dict) == 1:
+                st, fa = next(iter(self._ind_dict.items()))
+                return f'(1 - (1 - {full_factor})^{{{st.get_latex_repr()}}})'
+
+            latex_prod = ' \\cdot '.join([f'(1 - {full_factor} \\cdot {fa.get_latex_repr()})^{{{st.get_latex_repr()}}}'
+                                          for st, fa in self._ind_dict.items()])
+
+            return f'(1 - {latex_prod})'
+
+    def _get_inducing_factor_part(self):
+        if self._relativity_factors:
+            return self._flow_factor.get_latex_repr()
+
+        return f'\\frac{{{self._flow_factor.get_latex_repr()}}}{{N}}'
 
     @staticmethod
     def _generate_names(start_name: str, end_names: list[str], ind_names: list[str]) -> tuple[str, str]:
