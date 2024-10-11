@@ -70,14 +70,17 @@ class FastFactor:
         else:
             return False
 
+    def update_matrix_value(self):
+        if self._connected_matrix is not None and self._value_pos_in_matrix is not None:
+            self._connected_matrix[self._value_pos_in_matrix] = self._value
+
     def update(self, time: int) -> None:
-        if self._func is not None:
-            try:
-                res = self._func(time)
-            except Exception:
-                raise FactorError(f"factor '{self}' cannot be calculated with argument {time}")
-            self._value = res
-            self._connected_matrix[self._value_pos_in_matrix] = res
+        try:
+            res = self._func(time)
+        except Exception:
+            raise FactorError(f"factor '{self}' cannot be calculated with argument {time}")
+        self._value = res
+        self._connected_matrix[self._value_pos_in_matrix] = res
 
     @property
     def value(self) -> float:
@@ -90,12 +93,6 @@ class FastFactor:
     @property
     def name(self) -> str:
         return self._name
-
-    @name.setter
-    def name(self, name: str) -> None:
-        if not isinstance(name, str) or name == '':
-            raise FactorError('invalid name for Factor, name must be not empty string')
-        self._name = name
 
     def __str__(self) -> str:
         return self._name

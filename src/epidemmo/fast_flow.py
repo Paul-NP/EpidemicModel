@@ -64,23 +64,16 @@ class FastFlow:
         flow_factor = self._prepare_flow_factor(flow_factor)
         ind_dict = self._prepare_factors_dict(inducing, 'inducing', start)
 
-        self._population_size: float = 1.0
         self._relativity_factors: bool = False
 
         self._start: FastStage = start
         self._end_dict: dict[FastStage, FastFactor] = end_dict
         self._flow_factor: FastFactor = flow_factor
-
         self._ind_dict: dict[FastStage, FastFactor] = ind_dict
 
     @property
     def index(self) -> int:
         return self._index
-
-    #             self._flows_weights: np.ndarray = np.zeros((1, len(flows)), dtype=np.float64)
-    #         self._targets: np.ndarray = np.zeros((len(flows), len(stages)), dtype=np.float64)
-    #         self._induction_weights: np.ndarray = np.zeros((len(flows), len(stages)), dtype=np.float64)
-    #         self._outputs: np.ndarray = np.zeros((len(flows), len(stages)), dtype=np.bool)
 
     def connect_matrix(self, flows_weights: NDArray, targets: NDArray,
                        induction_weights: NDArray, outputs: NDArray) -> None:

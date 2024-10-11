@@ -104,7 +104,7 @@ class FastModelBuilder:
         flows = self._flows
 
         model = FastEpidemicModel(self._model_name, stages, flows, self._relativity_factors)
-        model.run(1)
+        model.start(1)
 
         return model
 
