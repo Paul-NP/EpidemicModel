@@ -80,7 +80,7 @@ class FastEpidemicModel:
             fa.update(step-1)
 
     def _prepare_factors_matrix(self, *args):
-        self._iflow_weights = self._flows_weights[self._induction_mask]
+        self._iflow_weights = self._flows_weights[self._induction_mask].reshape(-1, 1)
         self._flows_probabs[~self._induction_mask] = self._flows_weights[~self._induction_mask]
 
     def _correct_not_rel_factors(self, *args):
@@ -160,6 +160,8 @@ class FastEpidemicModel:
     def _fast_run(self):
         for step in range(1, self._duration):
             pr = self._result[step - 1]
+            a = np.array([1,2,3])
+            self._induction * self._iflow_weights
             self._flows_probabs[self._induction_mask] = 1 - ((1 - self._induction * self._iflow_weights) ** pr).prod(axis=1)
 
             for st_i in range(len(self._stage_starts)):
@@ -204,7 +206,6 @@ class FastEpidemicModel:
 
     @classmethod
     def get_table(cls, table_df: pd.DataFrame) -> PrettyTable:
-        print(table_df)
         table = PrettyTable()
         table.add_column('step', table_df.index.tolist())
         for col in table_df:
@@ -292,9 +293,11 @@ class FastEpidemicModel:
                 f.set_fvalue(kwargs[f.name])
 
     def set_start_stages(self, **kwargs) -> None:
-        for s in self._stages:
+        for s_index, s  in enumerate(self._stages):
             if s.name in kwargs:
                 s.num = kwargs[s.name]
+                self._stage_starts[s_index] = kwargs[s.name]
+
 
     def __str__(self) -> str:
         return f'Model({self._name})'

@@ -38,7 +38,9 @@ class FastModelBuilder:
         self._stages[name] = new_stage
         return self
 
-    def add_stages(self, **kwargs: int | float) -> FastModelBuilder:
+    def add_stages(self, *args: str, **kwargs: int | float) -> FastModelBuilder:
+        for name in args:
+            self.add_stage(name)
         for name, value in kwargs.items():
             self.add_stage(name, value)
         return self

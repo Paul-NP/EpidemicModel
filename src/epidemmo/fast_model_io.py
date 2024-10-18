@@ -1,8 +1,6 @@
 from dataclasses import dataclass
 from typing import Callable, Literal, Union, Type, TypeAlias
-from .model import EpidemicModel
 from .fast_model import FastEpidemicModel
-from .builder import ModelBuilder, ModelBuilderError
 from .fast_builder import FastModelBuilder, FastModelBuilderError
 
 import json
