@@ -2,6 +2,7 @@ import tkinter as tk
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import pandas as pd
+from epidemmo import ModelBuilder
 from epidemmo.model import EpidemicModel
 from epidemmo import Standard
 
@@ -22,6 +23,8 @@ class EpidemicModelApp(tk.Tk):
         # Create sliders for each factor
         self.sliders: dict[str, tk.Scale] = {}
         for i, factor in enumerate(self.model.factors):
+            if factor['name'][:3] in ['ind', 'end']:
+                continue
             label = tk.Label(parameters_frame, text=factor['name'])
             label.grid(row=i, column=0)
             slider = tk.Scale(parameters_frame, from_=0, to=1,
@@ -36,7 +39,7 @@ class EpidemicModelApp(tk.Tk):
         # Create checkbox for auto update
         auto_update_checkbox = tk.Checkbutton(parameters_frame, text="Auto update", variable=self.auto_update)
         auto_update_checkbox.grid(row=len(self.model.factors), column=0, columnspan=2)
-        auto_update_checkbox.deselect()
+        # auto_update_checkbox.deselect()
 
         # Create spinbox for simulation duration
         tk.Label(parameters_frame, text="Simulation duration").grid(row=len(self.model.factors) + 1, column=0)
@@ -69,14 +72,29 @@ class EpidemicModelApp(tk.Tk):
 
     def update_graph(self) -> None:
         duration = int(self.simulation_duration.get())
-        print({factor['name']: float(factor['value']) for factor in self.model.factors})
         result_df = self.model.start(duration)
         self.ax.clear()
         result_df.plot(ax=self.ax)
         self.canvas.draw()
 
 
+def get_two_strains() -> ModelBuilder:
+    builder = ModelBuilder()
+    # builder.add_stages('SR', 'RS', 'IR', 'RI', 'RR', SS=998, SI=1, IS=1)
+    builder.add_stages(SS=998, SI=1, IS=1, SR=0, RS=0, IR=0, RI=0, RR=0)
+    builder.add_factor('beta', 0.4, latex_repr=r'\beta').add_factor('eta', 0.2, latex_repr=r'\eta')
+    builder.add_factor('gamma', 0.1, latex_repr=r'\gamma').add_factor('delta', 0.1, latex_repr=r'\delta')
+    builder.add_flow('SS', 'IS', 'beta', {'IS': 1, 'IR': 1}).add_flow('IS', 'RS', 'gamma')
+    builder.add_flow('RS', 'RI', 'eta', {'SI': 1, 'RI': 1}).add_flow('RI', 'RR', 'delta')
+
+    builder.add_flow('SS', 'SI', 'eta', {'SI': 1, 'RI': 1}).add_flow('SI', 'SR', 'delta')
+    builder.add_flow('SR', 'IR', 'beta', {'IS': 1, 'IR': 1}).add_flow('IR', 'RR', 'gamma')
+
+    builder.set_model_name('two_strains')
+
+    return builder
+
 if __name__ == "__main__":
-    model = Standard.get_SIRD_builder().build()
+    model = get_two_strains().build()
     app = EpidemicModelApp(model)
     app.mainloop()
