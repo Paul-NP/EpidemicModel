@@ -15,7 +15,7 @@ stageFactorDict: TypeAlias = dict[FastStage, anyFactor]
 flowMethod: TypeAlias = int
 
 
-class FlowError(Exception):
+class FastFlowError(Exception):
     pass
 
 
@@ -98,6 +98,9 @@ class FastFlow:
     def send_latex_terms(self, simplified: bool) -> None:
         self._send_latex_out(simplified)
         self._send_latex_input(simplified)
+
+    def set_relativity_factors(self, relativity: bool) -> None:
+        self._relativity_factors = relativity
 
     def _send_latex_out(self, simplified: bool) -> None:
         self._start.add_latex_out(self._get_latex_repr(simplified))

@@ -6,7 +6,7 @@ if TYPE_CHECKING:
     from .fast_flow import FastFlow
 
 
-class StageError(Exception):
+class FastStageError(Exception):
     pass
 
 
@@ -20,19 +20,19 @@ class FastStage:
     @classmethod
     def _check_name(cls, name: str) -> None:
         if not isinstance(name, str):
-            raise StageError('The stage name must be str')
+            raise FastStageError('The stage name must be str')
         if len(name.split()) > 1:
-            raise StageError('The stage name must be one word')
+            raise FastStageError('The stage name must be one word')
         if not cls.__MIN_NAME_LEN <= len(name) <= cls.__MAX_NAME_LEN:
-            raise StageError(f'The stage name has an invalid length. Valid range '
+            raise FastStageError(f'The stage name has an invalid length. Valid range '
                              f'[{cls.__MIN_NAME_LEN}, {cls.__MAX_NAME_LEN}]')
 
     @classmethod
     def _check_value(cls, value: int | float) -> None:
         if not isinstance(value, float | int):
-            raise StageError("Stage start num must be number")
+            raise FastStageError("Stage start num must be number")
         if value < cls.__MIN_VALUE:
-            raise StageError(f'Starting number in the stage cannot be less than {cls.__MIN_VALUE}')
+            raise FastStageError(f'Starting number in the stage cannot be less than {cls.__MIN_VALUE}')
 
     def __init__(self, name: str, start_num: int | float, *, index: int) -> None:
         self._check_name(name)
