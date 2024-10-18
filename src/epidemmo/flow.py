@@ -2,41 +2,41 @@ from __future__ import annotations
 from typing import Callable, TypeAlias, Optional, Union, Any
 from numpy.typing import NDArray
 
-from .fast_stage import FastStage
-from .fast_factor import FastFactor
+from .stage import Stage
+from .factor import Factor
 
 from scipy.stats import poisson  # type: ignore
 from math import prod
 
 
 factorValue: TypeAlias = Union[int, float, Callable[[int], float]]
-anyFactor: TypeAlias = factorValue | FastFactor
-stageFactorDict: TypeAlias = dict[FastStage, anyFactor]
+anyFactor: TypeAlias = factorValue | Factor
+stageFactorDict: TypeAlias = dict[Stage, anyFactor]
 flowMethod: TypeAlias = int
 
 
-class FastFlowError(Exception):
+class FlowError(Exception):
     pass
 
 
-class FastFlow:
+class Flow:
     _accuracy = 0.00001
 
-    def _get_factor_latex_repr(self, current_stage: FastStage, start: FastStage, content: str) -> str:
+    def _get_factor_latex_repr(self, current_stage: Stage, start: Stage, content: str) -> str:
         if content == 'end':
             return f'v_{{{start.name[0].lower()}{current_stage.name[0].lower()}}}'
         else:
             return f'e_{{{current_stage.name[0].lower()},{self._short_name.lower()}}}'
 
-    def _prepare_factors_dict(self, factors_data: dict[FastStage, FastFactor | factorValue],
-                              content: str, start: FastStage) -> dict[FastStage, FastFactor]:
+    def _prepare_factors_dict(self, factors_data: dict[Stage, Factor | factorValue],
+                              content: str, start: Stage) -> dict[Stage, Factor]:
         new_factors = {}
         for stage, factor in factors_data.items():
-            if isinstance(factor, FastFactor):
+            if isinstance(factor, Factor):
                 new_factors[stage] = factor
             else:
                 factor_name = f'{content[:3]}[{stage.name[0]}]-{self}'
-                factor = FastFactor(factor_name, factor)
+                factor = Factor(factor_name, factor)
 
                 factor_repr = self._get_factor_latex_repr(stage, start, content)
 
@@ -45,15 +45,15 @@ class FastFlow:
 
         return new_factors
 
-    def _prepare_flow_factor(self, factor_data: FastFactor | factorValue) -> FastFactor:
-        if isinstance(factor_data, FastFactor):
+    def _prepare_flow_factor(self, factor_data: Factor | factorValue) -> Factor:
+        if isinstance(factor_data, Factor):
             return factor_data
         else:
-            factor = FastFactor(f'factor-{self}', factor_data)
+            factor = Factor(f'factor-{self}', factor_data)
             factor.set_latex_repr(f'v_{{{self._short_name}}}')
             return factor
 
-    def __init__(self, start: FastStage, end: stageFactorDict, flow_factor: anyFactor,
+    def __init__(self, start: Stage, end: stageFactorDict, flow_factor: anyFactor,
                  inducing: stageFactorDict, *, index: int) -> None:
 
         self._name, self._full_name = self._generate_names(start.name, [e.name for e in end.keys()],
@@ -66,10 +66,10 @@ class FastFlow:
 
         self._relativity_factors: bool = False
 
-        self._start: FastStage = start
-        self._end_dict: dict[FastStage, FastFactor] = end_dict
-        self._flow_factor: FastFactor = flow_factor
-        self._ind_dict: dict[FastStage, FastFactor] = ind_dict
+        self._start: Stage = start
+        self._end_dict: dict[Stage, Factor] = end_dict
+        self._flow_factor: Factor = flow_factor
+        self._ind_dict: dict[Stage, Factor] = ind_dict
 
     @property
     def index(self) -> int:
@@ -87,7 +87,7 @@ class FastFlow:
         for st, fa in self._end_dict.items():
             fa.connect_matrix(targets, (self._index, st.index))
 
-    def get_factors(self) -> list[FastFactor]:
+    def get_factors(self) -> list[Factor]:
         all_factors = [self._flow_factor]
         for st, fa in self._ind_dict.items():
             all_factors.append(fa)
@@ -175,17 +175,17 @@ class FastFlow:
         return self._full_name
 
     @property
-    def start(self) -> FastStage:
+    def start(self) -> Stage:
         return self._start
 
     @property
-    def ends(self) -> dict[FastStage, FastFactor]:
+    def ends(self) -> dict[Stage, Factor]:
         return self._end_dict
 
     @property
-    def factor(self) -> FastFactor:
+    def factor(self) -> Factor:
         return self._flow_factor
 
     @property
-    def inducing(self) -> dict[FastStage, FastFactor]:
+    def inducing(self) -> dict[Stage, Factor]:
         return self._ind_dict

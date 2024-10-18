@@ -7,31 +7,31 @@ import pandas as pd
 from matplotlib import pyplot as plt
 from prettytable import PrettyTable
 
-from .fast_flow import FastFlow
-from .fast_stage import FastStage
-from .fast_factor import FastFactor
+from .flow import Flow
+from .stage import Stage
+from .factor import Factor
 from scipy.stats import poisson
 
 
 from typing import Optional, Sequence, Callable
 
 
-class FastModelError(Exception):
+class ModelError(Exception):
     pass
 
 
-class FastEpidemicModel:
+class EpidemicModel:
     __len_float: int = 4
 
-    def __init__(self, name: str, stages: list[FastStage], flows: list[FastFlow], relativity_factors: bool):
+    def __init__(self, name: str, stages: list[Stage], flows: list[Flow], relativity_factors: bool):
         self._name: str = name
 
         stages = sorted(stages, key=lambda st: st.index)  # сортируем стадии по индексу
         flows = sorted(flows, key=lambda fl: fl.index)  # сортируем потоки по индексу
 
-        self._stages: tuple[FastStage, ...] = tuple(stages)
-        self._flows: tuple[FastFlow, ...] = tuple(flows)
-        self._factors: tuple[FastFactor, ...] = tuple(set(fa for fl in flows for fa in fl.get_factors()))
+        self._stages: tuple[Stage, ...] = tuple(stages)
+        self._flows: tuple[Flow, ...] = tuple(flows)
+        self._factors: tuple[Factor, ...] = tuple(set(fa for fl in flows for fa in fl.get_factors()))
 
         self._stage_names: tuple[str, ...] = tuple(st.name for st in stages)
         self._flow_names: tuple[str, ...] = tuple(str(fl) for fl in flows)
@@ -40,7 +40,7 @@ class FastEpidemicModel:
         self._stage_starts: np.ndarray = np.array([st.start_num for st in stages], dtype=np.float64)
 
         # факторы, которые будут изменяться во время моделирования
-        self._dynamic_factors: list[FastFactor] = [fa for fa in self._factors if fa.is_dynamic]
+        self._dynamic_factors: list[Factor] = [fa for fa in self._factors if fa.is_dynamic]
 
         self._flows_weights: np.ndarray = np.zeros(len(flows), dtype=np.float64)
         self._targets: np.ndarray = np.zeros((len(flows), len(stages)), dtype=np.float64)
@@ -66,7 +66,7 @@ class FastEpidemicModel:
 
     def set_relativity_factors(self, relativity_factors: bool):
         if not isinstance(relativity_factors, bool):
-            raise FastModelError('relativity_factors must be bool')
+            raise ModelError('relativity_factors must be bool')
         for fl in self._flows:
             fl.set_relativity_factors(relativity_factors)
         self._relativity_factors = relativity_factors
@@ -86,7 +86,7 @@ class FastEpidemicModel:
     def _correct_not_rel_factors(self, *args):
         self._flows_weights[self._induction_mask] /= self._stage_starts.sum()
 
-    def _connect_matrix(self, flows: list[FastFlow]):
+    def _connect_matrix(self, flows: list[Flow]):
         for fl in flows:
             fl.connect_matrix(self._flows_weights, self._targets, self._induction_weights, self._outputs)
 

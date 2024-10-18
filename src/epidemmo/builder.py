@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from .fast_stage import FastStage
-from .fast_factor import FastFactor
-from .fast_flow import FastFlow
-from .fast_model import FastEpidemicModel
+from .stage import Stage
+from .factor import Factor
+from .flow import Flow
+from .model import EpidemicModel
 
 from typing import Callable, TypeAlias, Union, Optional, Any
 
@@ -14,31 +14,31 @@ factorValue: TypeAlias = Union[int, float, Callable[[int], float]]
 stageNameFactorDict: TypeAlias = dict[stageName, factorName | factorValue]
 
 
-class FastModelBuilderError(Exception):
+class ModelBuilderError(Exception):
     pass
 
 
-class FastModelBuilder:
+class ModelBuilder:
     def __init__(self) -> None:
-        self._stages: dict[str, FastStage] = {}
-        self._factors: dict[str, FastFactor] = {}
-        self._flows: list[FastFlow] = []
+        self._stages: dict[str, Stage] = {}
+        self._factors: dict[str, Factor] = {}
+        self._flows: list[Flow] = []
 
         self._relativity_factors: bool = False
         self._model_name: str = ''
         self._manual_name: bool = False
 
     def add_stage(self, name: stageName, start_num: int | float = 0, *,
-                  latex_repr: Optional[str] = None) -> FastModelBuilder:
+                  latex_repr: Optional[str] = None) -> ModelBuilder:
         self._check_name(name)
         self._check_new_stage_name(name)
 
-        new_stage = FastStage(name, start_num, index=len(self._stages))
+        new_stage = Stage(name, start_num, index=len(self._stages))
         new_stage.set_latext_repr(latex_repr)
         self._stages[name] = new_stage
         return self
 
-    def add_stages(self, *args: str, **kwargs: int | float) -> FastModelBuilder:
+    def add_stages(self, *args: str, **kwargs: int | float) -> ModelBuilder:
         for name in args:
             self.add_stage(name)
         for name, value in kwargs.items():
@@ -46,23 +46,23 @@ class FastModelBuilder:
         return self
 
     def add_factor(self, name: factorName, value: factorValue, *,
-                   latex_repr: Optional[str] = None) -> FastModelBuilder:
+                   latex_repr: Optional[str] = None) -> ModelBuilder:
         self._check_name(name)
         self._check_new_factor_name(name)
 
-        new_factor = FastFactor(name, value)
+        new_factor = Factor(name, value)
         new_factor.set_latex_repr(latex_repr)
         self._factors[name] = new_factor
         return self
 
-    def add_factors(self, **kwargs: factorValue) -> FastModelBuilder:
+    def add_factors(self, **kwargs: factorValue) -> ModelBuilder:
         for name, value in kwargs.items():
             self.add_factor(name, value)
         return self
 
     def add_flow(self, start: stageName, end: stageName | stageNameFactorDict,
                  factor: factorName | factorValue,
-                 inducing: Optional[stageName | stageNameFactorDict] = None) -> FastModelBuilder:
+                 inducing: Optional[stageName | stageNameFactorDict] = None) -> ModelBuilder:
 
         if inducing is None:
             inducing = {}
@@ -79,19 +79,19 @@ class FastModelBuilder:
 
         self._check_start_end_conflict(start_stage, end_stages)
 
-        flow = FastFlow(start_stage, end_stages, flow_factor, inducing_stages, index=len(self._flows))
+        flow = Flow(start_stage, end_stages, flow_factor, inducing_stages, index=len(self._flows))
         self._check_new_flow(flow)
 
         self._flows.append(flow)
         return self
 
-    def set_relativity_factors(self, relativity: bool) -> FastModelBuilder:
+    def set_relativity_factors(self, relativity: bool) -> ModelBuilder:
         if not isinstance(relativity, bool):
-            raise FastModelBuilderError('Relativity of Factors must be bool')
+            raise ModelBuilderError('Relativity of Factors must be bool')
         self._relativity_factors = relativity
         return self
 
-    def set_model_name(self, name: str) -> FastModelBuilder:
+    def set_model_name(self, name: str) -> ModelBuilder:
         self._check_name(name)
         self._manual_name = True
         self._model_name = name
@@ -105,7 +105,7 @@ class FastModelBuilder:
         stages = list(self._stages.values())
         flows = self._flows
 
-        model = FastEpidemicModel(self._model_name, stages, flows, self._relativity_factors)
+        model = EpidemicModel(self._model_name, stages, flows, self._relativity_factors)
         model.start(1)
 
         return model
@@ -115,9 +115,9 @@ class FastModelBuilder:
         self._check_for_stage_name(start)
 
     @staticmethod
-    def _check_start_end_conflict(start_stage: FastStage, end_stages: dict[FastStage, FastFactor | factorValue]):
+    def _check_start_end_conflict(start_stage: Stage, end_stages: dict[Stage, Factor | factorValue]):
         if start_stage in end_stages.keys():
-            raise FastModelBuilderError('Start Stage cannot coincide with any End Stage')
+            raise ModelBuilderError('Start Stage cannot coincide with any End Stage')
 
     def _check_stage_data(self, data: Any, source_type: str):
         if isinstance(data, stageName):
@@ -127,72 +127,72 @@ class FastModelBuilder:
             self._check_dict_for_stage_name(data)
             self._check_dict_for_factor_name(data)
         else:
-            raise FastModelBuilderError(f'The {source_type} for a Flow should be a Stage name or '
+            raise ModelBuilderError(f'The {source_type} for a Flow should be a Stage name or '
                                     f'a dictionary of Stages and Factors')
 
     @staticmethod
     def _check_name(name: Any):
         if not isinstance(name, anyName):
-            raise FastModelBuilderError('Any name in the model must be a string')
+            raise ModelBuilderError('Any name in the model must be a string')
         if len(name) == 0:
-            raise FastModelBuilderError('Any name in the model cannot be empty')
+            raise ModelBuilderError('Any name in the model cannot be empty')
 
     @staticmethod
     def _check_names_dict(original_dict: dict[Any, Any]):
         if any(not isinstance(name, anyName) for name in original_dict.keys()):
-            raise FastModelBuilderError('Any name in the model must be a string')
+            raise ModelBuilderError('Any name in the model must be a string')
 
     def _check_new_stage_name(self, name: stageName):
         if name in self._stages:
-            raise FastModelBuilderError(f'Stage named "{name}" has already been added')
+            raise ModelBuilderError(f'Stage named "{name}" has already been added')
 
     def _check_new_factor_name(self, name: factorName):
         if name in self._factors:
-            raise FastModelBuilderError(f'Factor named "{name}" has already been added')
+            raise ModelBuilderError(f'Factor named "{name}" has already been added')
 
-    def _check_new_flow(self, flow: FastFlow):
+    def _check_new_flow(self, flow: Flow):
         for fl in self._flows:
             if flow.is_similar(fl):
-                raise FastModelBuilderError(f'Two Flows connect the same Stages')
+                raise ModelBuilderError(f'Two Flows connect the same Stages')
 
     def _check_for_stage_name(self, name: stageName):
         if name not in self._stages:
-            raise FastModelBuilderError(f'Stage "{name}" is not defined')
+            raise ModelBuilderError(f'Stage "{name}" is not defined')
 
     def _check_dict_for_stage_name(self, name_dict: dict[stageName, Any]):
         potential_names = set(name_dict.keys())
         existing_names = set(self._stages.keys())
         new_names = potential_names - existing_names
         if new_names:
-            raise FastModelBuilderError(f'Stages with names: {new_names} are not defined')
+            raise ModelBuilderError(f'Stages with names: {new_names} are not defined')
 
     def _check_for_factor_name(self, name: factorName):
         if name not in self._factors:
-            raise FastModelBuilderError(f'Factor "{name}" is not defined')
+            raise ModelBuilderError(f'Factor "{name}" is not defined')
 
     def _check_dict_for_factor_name(self, factor_dict: dict[stageName, Any]):
         potential_names = set(factor for factor in factor_dict.values() if isinstance(factor, factorName))
         existing_names = set(self._factors.keys())
         new_names = potential_names - existing_names
         if new_names:
-            raise FastModelBuilderError(f'Factors with names: {new_names} are not defined')
+            raise ModelBuilderError(f'Factors with names: {new_names} are not defined')
 
     def _check_factor(self, factor_data: Any):
         if isinstance(factor_data, factorName):
             self._check_for_factor_name(factor_data)
-        elif not FastFactor.may_be_factor(factor_data):
-            raise FastModelBuilderError(f'Next value cannot be converted to a Factor: "{factor_data}"')
+        elif not Factor.may_be_factor(factor_data):
+            raise ModelBuilderError(f'Next value cannot be converted to a Factor: "{factor_data}"')
 
-    def _prepare_start_stage(self, start_name: stageName) -> FastStage:
+    def _prepare_start_stage(self, start_name: stageName) -> Stage:
         return self._stages[start_name]
 
-    def _prepare_factor(self, factor_data: factorName | factorValue) -> FastFactor | factorValue:
+    def _prepare_factor(self, factor_data: factorName | factorValue) -> Factor | factorValue:
         if isinstance(factor_data, factorName):
             return self._factors[factor_data]
         else:
             return factor_data
 
-    def _prepare_stage_factor_dict(self, source: stageName | stageNameFactorDict) -> dict[FastStage, FastFactor | factorValue]:
+    def _prepare_stage_factor_dict(self, source: stageName | stageNameFactorDict) -> dict[Stage, Factor | factorValue]:
         if isinstance(source, stageName):
             stage_factor = self._get_one_stage_dict(source)
         else:
@@ -200,10 +200,10 @@ class FastModelBuilder:
 
         return stage_factor
 
-    def _get_one_stage_dict(self, source: stageName) -> dict[FastStage, FastFactor | factorValue]:
+    def _get_one_stage_dict(self, source: stageName) -> dict[Stage, Factor | factorValue]:
         return {self._stages[source]: 1}
 
-    def _get_many_stage_dict(self, original_dict: stageNameFactorDict) -> dict[FastStage, FastFactor | factorValue]:
+    def _get_many_stage_dict(self, original_dict: stageNameFactorDict) -> dict[Stage, Factor | factorValue]:
         stage_factor = {}
         for stage_name, factor in original_dict.items():
             stage = self._stages[stage_name]
@@ -220,7 +220,7 @@ class FastModelBuilder:
 
         not_used_stages = set(self._stages.values()) - used_stages
         if not_used_stages:
-            raise FastModelBuilderError(f'The following stages are not connected by Flows: {not_used_stages}')
+            raise ModelBuilderError(f'The following stages are not connected by Flows: {not_used_stages}')
 
 
 

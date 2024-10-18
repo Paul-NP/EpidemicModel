@@ -5,22 +5,22 @@ from types import FunctionType
 from numpy.typing import NDArray
 
 
-class FastFactorError(Exception):
+class FactorError(Exception):
     pass
 
 
-class FastFactor:
+class Factor:
     __MIN_NAME_LEN: int = 1
     __MAX_NAME_LEN: int = 30
 
     @classmethod
     def __check_name(cls, name: str) -> None:
         if not isinstance(name, str):
-            raise FastFactorError('The factor name must be str')
+            raise FactorError('The factor name must be str')
         if len(name.split()) > 1:
-            raise FastFactorError('The factor name must be one word')
+            raise FactorError('The factor name must be one word')
         if not cls.__MIN_NAME_LEN <= len(name) <= cls.__MAX_NAME_LEN:
-            raise FastFactorError(f'The factor name "{name}" has an invalid length. Valid range '
+            raise FactorError(f'The factor name "{name}" has an invalid length. Valid range '
                               f'[{cls.__MIN_NAME_LEN}, {cls.__MAX_NAME_LEN}]')
 
     def __init__(self, name: str, value: int | float | Callable[[int], float]) -> None:
@@ -54,7 +54,7 @@ class FastFactor:
                 self._func = func
                 self._update_func = self._update_dynamic
             case _:
-                raise FastFactorError('invalid value for Factor, value can be int | float | Callable[[int], float]')
+                raise FactorError('invalid value for Factor, value can be int | float | Callable[[int], float]')
 
     def get_fvalue(self) -> Callable[[int], float] | float:
         if self._func is not None:
@@ -86,7 +86,7 @@ class FastFactor:
         try:
             res = self._func(time)
         except Exception:
-            raise FastFactorError(f"factor '{self}' cannot be calculated with argument {time}")
+            raise FactorError(f"factor '{self}' cannot be calculated with argument {time}")
         self._value = res
 
     @property
@@ -106,7 +106,7 @@ class FastFactor:
 
     def set_latex_repr(self, latex_repr: Optional[str]) -> None:
         if latex_repr is not None and not isinstance(latex_repr, str):
-            raise FastFactorError('latex_repr must be str or None')
+            raise FactorError('latex_repr must be str or None')
         self._latex_repr = latex_repr
 
     def get_latex_repr(self) -> str:

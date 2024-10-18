@@ -1,8 +1,8 @@
-from epidemmo.fast_model import FastEpidemicModel
-from epidemmo.fast_builder import FastModelBuilder
+from epidemmo.model import EpidemicModel
+from epidemmo.builder import ModelBuilder
 import pytest
 
-from epidemmo.fast_standard import FastStandard
+from epidemmo.standard import Standard
 
 
 @pytest.fixture()
@@ -36,7 +36,7 @@ def slhrd_result10() -> list[float]:
 
 
 def test_sir(sir_result10):
-    builder = FastModelBuilder()
+    builder = ModelBuilder()
     builder.add_stage('S', 99).add_stage('I', 1).add_stage('R')
     builder.add_factor('beta', 0.4).add_factor('gamma', 0.1)
     builder.add_flow('S', 'I', 'beta', 'I').add_flow('I', 'R', 'gamma')
@@ -48,7 +48,7 @@ def test_sir(sir_result10):
 
 
 def test_seir(seir_result10):
-    builder = FastModelBuilder()
+    builder = ModelBuilder()
     builder.add_stage('S', 99).add_stage('E', 0).add_stage('I', 1).add_stage('R')
     builder.add_factor('beta', 0.4).add_factor('gamma', 0.1).add_factor('alpha', 0.1)
     builder.add_flow('S', 'E', 'beta', 'I').add_flow('E', 'I', 'alpha').add_flow('I', 'R', 'gamma')
@@ -60,13 +60,13 @@ def test_seir(seir_result10):
 
 
 def test_sir_stoch():
-    model = FastStandard.get_SIR_builder().build()
+    model = Standard.get_SIR_builder().build()
     result = model.start(50, stochastic=True)
     assert result.sum(axis=1).to_list() == pytest.approx([100] * 50, abs=0.01)
 
 
 def test_slhrd(slhrd_result10):
-    builder = FastModelBuilder()
+    builder = ModelBuilder()
     builder.add_stage('S', 99).add_stage('L', 1).add_stage('H', 0).add_stage('R').add_stage('D')
     builder.add_factor('beta', 0.4).add_factor('gamma', 0.1)
     builder.add_flow('S', {'L': 0.8, 'H': 0.2}, 'beta', {'L': 1, 'H': 1})
@@ -79,7 +79,7 @@ def test_slhrd(slhrd_result10):
 
 
 def test_sir_fast_create(sir_result10):
-    builder = FastModelBuilder()
+    builder = ModelBuilder()
     builder.add_stages(S=99, I=1, R=0).add_factors(beta=0.4, gamma=0.1)
     builder.add_flow('S', 'I', 'beta', 'I').add_flow('I', 'R', 'gamma')
 
@@ -89,27 +89,27 @@ def test_sir_fast_create(sir_result10):
 
 
 def test_standard_sir(sir_result10):
-    model = FastStandard.get_SIR_builder().build()
+    model = Standard.get_SIR_builder().build()
     result = model.start(10)
     result = model.start(10).to_numpy().round(2).T.ravel().tolist()
     assert result == pytest.approx(sir_result10, abs=0.01)
 
 
 def test_standard_seir(seir_result10):
-    model = FastStandard.get_SEIR_builder().build()
+    model = Standard.get_SEIR_builder().build()
     result = model.start(10)
     result = model.start(10).to_numpy().round(2).T.ravel().tolist()
     assert result == pytest.approx(seir_result10, abs=0.01)
 
 
 def test_sir_changed(sir_result10_beta05_gamma02):
-    model = FastStandard.get_SIR_builder().build()
+    model = Standard.get_SIR_builder().build()
     model.set_factors(beta=0.5, gamma=0.2)
     result = model.start(10).to_numpy().round(2).T.ravel().tolist()
     assert result == pytest.approx(sir_result10_beta05_gamma02, abs=0.01)
 
 
 def test_seirds_latex(seirds_latex_full_relative):
-    model = FastStandard.get_SEIRDS_builder().build()
+    model = Standard.get_SEIRDS_builder().build()
     latex = model.get_latex()
     assert latex == seirds_latex_full_relative

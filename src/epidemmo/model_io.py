@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Callable, Literal, Union, Type, TypeAlias
-from .fast_model import FastEpidemicModel
-from .fast_builder import FastModelBuilder, FastModelBuilderError
+from .model import EpidemicModel
+from .builder import ModelBuilder, ModelBuilderError
 
 import json
 
@@ -9,35 +9,35 @@ import json
 factorValue: TypeAlias = Union[int, float, Callable[[int], float]]
 
 
-class FastModelIOError(Exception):
+class ModelIOError(Exception):
     pass
 
 
-class FastAbstractIO:
-    def load(self, source: str) -> FastEpidemicModel:
+class AbstractIO:
+    def load(self, source: str) -> EpidemicModel:
         try:
             return self._parse(source)
         except ModelBuilderError as e:
             e.add_note('(while json parser work)')
             raise e
         except Exception as e:
-            raise FastModelIOError(f'While jsonIO loading model: {str(e)}')
+            raise ModelIOError(f'While jsonIO loading model: {str(e)}')
 
-    def dump(self, model: FastEpidemicModel) -> str:
+    def dump(self, model: EpidemicModel) -> str:
         try:
             return self._generate(model)
         except Exception as e:
-            raise FastModelIOError(f'While jsonIO dumping model: {str(e)}')
+            raise ModelIOError(f'While jsonIO dumping model: {str(e)}')
 
-    def _parse(self, source: str) -> FastEpidemicModel:
-        raise FastModelIOError(f'{type(self)} does not support file parsing')
+    def _parse(self, source: str) -> EpidemicModel:
+        raise ModelIOError(f'{type(self)} does not support file parsing')
 
-    def _generate(self, model: FastEpidemicModel) -> str:
-        raise FastModelIOError(f'{type(self)} does not support file generation')
+    def _generate(self, model: EpidemicModel) -> str:
+        raise ModelIOError(f'{type(self)} does not support file generation')
 
 
-class FastKK2024IO(FastAbstractIO):
-    def _parse(self, source: str) -> FastEpidemicModel:
+class KK2024IO(AbstractIO):
+    def _parse(self, source: str) -> EpidemicModel:
         structure = json.loads(source)
         raw_stages = structure['compartments']
         raw_flows = structure['flows']
@@ -60,8 +60,8 @@ class FastKK2024IO(FastAbstractIO):
         return builder.build()
 
 
-class FastSimpleIO(FastAbstractIO):
-    def _parse(self, source: str) -> FastEpidemicModel:
+class SimpleIO(AbstractIO):
+    def _parse(self, source: str) -> EpidemicModel:
         structure = json.loads(source)
 
         builder = ModelBuilder()
@@ -78,27 +78,27 @@ class FastSimpleIO(FastAbstractIO):
 
         return builder.build()
 
-    def _generate(self, model: FastEpidemicModel) -> str:
+    def _generate(self, model: EpidemicModel) -> str:
         structure = {'name': model.name, 'stages': model.stages, 'factors': model.factors, 'flows': model.flows}
         return json.dumps(structure, indent=4)
 
 
-class FastModelIO:
-    io_ways: dict[str, Type[FastAbstractIO]] = {'kk_2024': FastKK2024IO, 'simple_io': FastSimpleIO}
+class ModelIO:
+    io_ways: dict[str, Type[AbstractIO]] = {'kk_2024': KK2024IO, 'simple_io': SimpleIO}
 
     def __init__(self, struct_version: Literal['kk_2024', 'simple_io'] = 'simple_io') -> None:
 
         if struct_version not in self.io_ways:
-            raise FastModelIOError('Unknown structure version')
+            raise ModelIOError('Unknown structure version')
 
-        self._io: FastAbstractIO = self.io_ways[struct_version]()
+        self._io: AbstractIO = self.io_ways[struct_version]()
 
-    def load(self, filename: str) -> FastEpidemicModel:
+    def load(self, filename: str) -> EpidemicModel:
         with open(filename, 'r', encoding='utf8') as file:
             json_string = file.read()
             return self._io.load(json_string)
 
-    def save(self, model: FastEpidemicModel, filename: str) -> None:
+    def save(self, model: EpidemicModel, filename: str) -> None:
         json_string = self._io.dump(model)
         with open(filename, 'w', encoding='utf8') as file:
             file.write(json_string)
