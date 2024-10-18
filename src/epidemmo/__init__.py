@@ -7,5 +7,6 @@ from .fast_stage import FastStage
 from .fast_factor import FastFactor
 from .fast_model import FastEpidemicModel
 from .fast_builder import FastModelBuilder
+from .fast_model_io import FastModelIO
 
 __version__ = '0.0.10'
