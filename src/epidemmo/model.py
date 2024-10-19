@@ -2,9 +2,7 @@ from datetime import datetime
 
 import numpy as np
 from itertools import product
-import time
 import pandas as pd
-from matplotlib import pyplot as plt
 from prettytable import PrettyTable
 
 from .flow import Flow
@@ -13,7 +11,7 @@ from .factor import Factor
 from scipy.stats import poisson
 
 
-from typing import Optional, Sequence, Callable
+from typing import Optional, Callable
 
 
 class ModelError(Exception):
@@ -82,6 +80,19 @@ class EpidemicModel:
     def _prepare_factors_matrix(self, *args):
         self._iflow_weights = self._flows_weights[self._induction_mask].reshape(-1, 1)
         self._flows_probabs[~self._induction_mask] = self._flows_weights[~self._induction_mask]
+        self._check_matrix()
+
+    def _check_matrix(self):
+        if (self._targets.sum(axis=1) != 1).any():
+            raise ModelError('Sum of targets one Flow must be 1')
+        if (self._flows_weights < 0).any():
+            raise ModelError('Flow weights must be >= 0')
+        if (self._flows_weights[~self._induction_mask] > 1).any():
+            raise ModelError('Not Induction Flow weights must be in range [0, 1]')
+        if self._relativity_factors and (self._flows_weights[self._induction_mask] > 1).any():
+            raise ModelError('Induction Flow weights, if they are relativity, must be in range [0, 1]')
+        if ((self._induction_weights < 0) | (self._induction_weights > 1)).any():
+            raise ModelError('Induction weights must be in range [0, 1]')
 
     def _correct_not_rel_factors(self, *args):
         self._flows_weights[self._induction_mask] /= self._stage_starts.sum()
@@ -96,33 +107,28 @@ class EpidemicModel:
             self._correct_not_rel_factors()
         self._prepare_factors_matrix()
 
-    def start(self, duration: int, *, additional_results: bool = False, stochastic: bool = False) -> pd.DataFrame:
+    def start(self, duration: int, *, full_save: bool = False, stochastic: bool = False) -> pd.DataFrame:
         self._duration = duration
-        self._start(additional_results, stochastic)
+        self._start(full_save, stochastic)
 
         df = self._get_result_df()
-
-        if additional_results:
-            flows = self._get_flows_df()
-            factors = self._get_factors_df()
-            df = pd.concat([df, flows, factors], axis=1)
-
         return df
 
-    def _start(self, additional_results: bool, stochastic: bool):
+    def _start(self, save_full: bool, stochastic: bool):
         self._result = np.zeros((self._duration, len(self._stage_starts)), dtype=np.float64)
         self._result[0] = self._stage_starts
 
         self._prepare()
 
-        if not self._dynamic_factors and not additional_results and not stochastic:
+        if not self._dynamic_factors and not save_full and not stochastic:
             self._fast_run()
             return
 
         self._full_step_seq: list[Callable] = []
         if self._dynamic_factors:
             self._full_step_seq.append(self._update_dynamic_factors)
-            self._full_step_seq.append(self._correct_not_rel_factors)
+            if not self._relativity_factors:
+                self._full_step_seq.append(self._correct_not_rel_factors)
             self._full_step_seq.append(self._prepare_factors_matrix)
 
         if stochastic:
@@ -130,7 +136,7 @@ class EpidemicModel:
         else:
             self._full_step_seq.append(self._determ_step)
 
-        if additional_results:
+        if save_full:
             self._full_step_seq.append(self._save_additional_results)
             self._result_flows = np.zeros((self._duration, len(self._flow_names)), dtype=np.float64)
             self._result_factors = np.zeros((self._duration, len(self._factors_names)), dtype=np.float64)
@@ -291,6 +297,8 @@ class EpidemicModel:
         for f in self._factors:
             if f.name in kwargs:
                 f.set_fvalue(kwargs[f.name])
+
+        self._dynamic_factors = [f for f in self._factors if f.is_dynamic]
 
     def set_start_stages(self, **kwargs) -> None:
         for s_index, s  in enumerate(self._stages):
