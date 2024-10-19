@@ -113,3 +113,10 @@ def test_seirds_latex(seirds_latex_full_relative):
     model = Standard.get_SEIRDS_builder().build()
     latex = model.get_latex()
     assert latex == seirds_latex_full_relative
+
+
+def test_dynamic_sir(sir_result10):
+    model = Standard.get_SIR_builder().build()
+    model.set_factors(beta=lambda x: 0.4, gamma=[0.1]*20)
+    result = model.start(10).to_numpy().round(2).T.ravel().tolist()
+    assert result == pytest.approx(sir_result10, abs=0.01)

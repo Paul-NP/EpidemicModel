@@ -55,3 +55,13 @@ def test_dynamic_from_dict(time, mode, result):
     f.connect_matrix(arr, (0, 0))
     f.update(time)
     assert (f.value, arr[0, 0]) == (pytest.approx(result), pytest.approx(result))
+
+
+@pytest.mark.parametrize('time, array, result', [(1, [0.05, 0.07], 0.07), (0, (0.01, 0.03), 0.01),
+                                                 (0, np.array([0.01, 0.03]), 0.01)])
+def test_array_factor(time, array, result):
+    f = Factor('array', array)
+    arr = np.zeros((2, 2), dtype=np.float64)
+    f.connect_matrix(arr, (0, 0))
+    f.update(time)
+    assert (f.value, arr[0, 0]) == (pytest.approx(result), pytest.approx(result))
