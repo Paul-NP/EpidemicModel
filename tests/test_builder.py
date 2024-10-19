@@ -1,6 +1,6 @@
 import pytest
 from epidemmo import ModelBuilder
-from epidemmo.stage import StageError
+from epidemmo.stage import Stage, StageError
 from epidemmo.builder import ModelBuilderError
 from epidemmo.factor import FactorError
 
@@ -11,7 +11,6 @@ def builder() -> ModelBuilder:
     builder.add_stage('S', 100).add_stage('I', 1).add_stage('R', 0)
     builder.add_factor('beta', 0.4).add_factor('gamma', 0.1)
     return builder
-
 
 @pytest.mark.parametrize('name, num', [(100, 'S'), (50, 50), ('S', 'S'), ('S'*30, 10), ('S', -10)])
 def test_bad_stage(name, num):

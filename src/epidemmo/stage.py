@@ -1,10 +1,9 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING, Optional
+from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from .flow import Flow
-
-from itertools import product
 
 
 class StageError(Exception):
@@ -35,81 +34,41 @@ class Stage:
         if value < cls.__MIN_VALUE:
             raise StageError(f'Starting number in the stage cannot be less than {cls.__MIN_VALUE}')
 
-    def __init__(self, name: str, start_num: int | float) -> None:
+    def __init__(self, name: str, start_num: int | float, *, index: int) -> None:
         self._check_name(name)
         self._check_value(start_num)
 
         self._name: str = name
-        self._current_num: float = float(start_num)
         self._start_num: float = float(start_num)
-        self._changes: list[float | int] = []
-        self._probability_out: dict[Flow, float] = {}
 
         self._latex_repr: Optional[str] = None
         self._latex_outs: list[str] = []
         self._latex_inputs: list[str] = []
 
-    def _correct_probabilities(self) -> None:
-        probs = list(self._probability_out.values())
-        result = []
-        for i, pr in enumerate(probs):
-            pr_new = 0.0
-            for happened in product([0, 1], repeat=len(probs)):
-                if happened[i]:
-                    to_pr = 1.0
-                    for j, h in enumerate(happened):
-                        if h:
-                            to_pr *= probs[j]
-                        else:
-                            to_pr *= 1 - probs[j]
-                    to_pr = to_pr / sum(happened)
-                    pr_new += to_pr
-            result.append(pr_new)
-        self._probability_out = dict(zip(self._probability_out.keys(), probs))
+        self._index: int = index
 
-    def add_probability_out(self, fl: Flow, prob: float) -> None:
-        self._probability_out[fl] = prob
-
-    def send_out_flow(self) -> None:
-        self._correct_probabilities()
-        for fl, pr in self._probability_out.items():
-            fl.set_change_in(pr * self._current_num)
-
-        self._probability_out = {}
-
-    def add_change(self, change: float | int) -> None:
-        self._changes.append(change)
-
-    def apply_changes(self) -> None:
-        self._current_num += sum(self._changes)
-        self._changes = []
+    @property
+    def index(self) -> int:
+        return self._index
 
     @property
     def name(self) -> str:
         return self._name
 
     @property
-    def num(self) -> float:
-        return self._current_num
-
-    @property
     def start_num(self) -> float:
         return self._start_num
 
-    @num.setter
-    def num(self, value: int) -> None:
+    @start_num.setter
+    def start_num(self, value: int) -> None:
         self._check_value(value)
         self._start_num = value
-        self.reset_num()
-
-    def reset_num(self) -> None:
-        self._current_num = self._start_num
 
     def __str__(self) -> str:
         return f"Stage({self._name})"
 
     def __repr__(self) -> str:
-        return f"Stage({self._name}) | {self._current_num:.{self.__FLOAT_LEN}f}"
+        return f"Stage({self._name}) | {self._start_num:.{self.__FLOAT_LEN}f}"
 
     def add_latex_out(self, term: str) -> None:
         self._latex_outs.append(term)

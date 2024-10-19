@@ -7,7 +7,6 @@ from .model import EpidemicModel
 
 from typing import Callable, TypeAlias, Union, Optional, Any
 
-
 anyName: TypeAlias = str
 stageName: TypeAlias = str
 factorName: TypeAlias = str
@@ -34,12 +33,14 @@ class ModelBuilder:
         self._check_name(name)
         self._check_new_stage_name(name)
 
-        new_stage = Stage(name, start_num)
+        new_stage = Stage(name, start_num, index=len(self._stages))
         new_stage.set_latext_repr(latex_repr)
         self._stages[name] = new_stage
         return self
 
-    def add_stages(self, **kwargs: int | float) -> ModelBuilder:
+    def add_stages(self, *args: str, **kwargs: int | float) -> ModelBuilder:
+        for name in args:
+            self.add_stage(name)
         for name, value in kwargs.items():
             self.add_stage(name, value)
         return self
@@ -78,7 +79,7 @@ class ModelBuilder:
 
         self._check_start_end_conflict(start_stage, end_stages)
 
-        flow = Flow(start_stage, end_stages, flow_factor, inducing_stages)
+        flow = Flow(start_stage, end_stages, flow_factor, inducing_stages, index=len(self._flows))
         self._check_new_flow(flow)
 
         self._flows.append(flow)
@@ -106,7 +107,7 @@ class ModelBuilder:
 
         model = EpidemicModel(self._model_name, stages, flows, self._relativity_factors)
         model.start(1)
-        model.drop_result()
+
         return model
 
     def _check_start(self, start: Any):
@@ -224,7 +225,7 @@ class ModelBuilder:
 
 
 
-            
+
 
 
 

@@ -1,198 +1,270 @@
-from __future__ import annotations
-from typing import Sequence, Literal, Optional, Callable
-
-from .factor import Factor, FactorError
-from .stage import Stage, StageError
-from .flow import Flow, FlowError, stageFactorDict
-
-import pandas as pd  # type: ignore
-import json
-import numpy as np
-from prettytable import PrettyTable
-from scipy.stats import poisson  # type: ignore
-
 from datetime import datetime
 
+import numpy as np
+from itertools import product
+import pandas as pd
+from prettytable import PrettyTable
 
-class EpidemicModelError(Exception):
+from .flow import Flow
+from .stage import Stage
+from .factor import Factor
+from scipy.stats import poisson
+
+
+from typing import Optional, Callable
+
+
+class ModelError(Exception):
     pass
 
 
 class EpidemicModel:
     __len_float: int = 4
 
-    __struct_versions = ['kk_2024']
-    __struct_versions_types = Literal['kk_2024']
+    def __init__(self, name: str, stages: list[Stage], flows: list[Flow], relativity_factors: bool):
+        self._name: str = name
 
-    def __init__(self, name: str, stages: list[Stage], flows: list[Flow], relativity_factors: bool) -> None:
-        """
-        EpidemicModel - compartmental epidemic model
-        :param stages: list of Stages
-        :param flows: list of Flows
-        :param relativity_factors: if True, then the probability of flows will not be divided by the population
-        size, otherwise it will be
-        """
-        try:
-            self._name = name
+        stages = sorted(stages, key=lambda st: st.index)  # сортируем стадии по индексу
+        flows = sorted(flows, key=lambda fl: fl.index)  # сортируем потоки по индексу
 
-            self._stages: tuple[Stage, ...] = tuple(stages)
-            self._flows: tuple[Flow, ...] = tuple(flows)
-            self._factors: tuple[Factor, ...] = tuple(set(fa for fl in self._flows for fa in fl.get_factors()))
+        self._stages: tuple[Stage, ...] = tuple(stages)
+        self._flows: tuple[Flow, ...] = tuple(flows)
+        self._factors: tuple[Factor, ...] = tuple(set(fa for fl in flows for fa in fl.get_factors()))
 
-            self._relativity_factors = False
-            self.set_relativity_factors(relativity_factors)
+        self._stage_names: tuple[str, ...] = tuple(st.name for st in stages)
+        self._flow_names: tuple[str, ...] = tuple(str(fl) for fl in flows)
+        self._factors_names: tuple[str, ...] = tuple(fa.name for fa in self._factors)
 
-            self._result_df: pd.DataFrame = pd.DataFrame(columns=[st.name for st in self._stages])
-            self._factors_df: pd.DataFrame = pd.DataFrame(columns=[fa.name for fa in self._factors])
-            self._flows_df: pd.DataFrame = pd.DataFrame(columns=[str(fl) for fl in self._flows])
+        self._stage_starts: np.ndarray = np.array([st.start_num for st in stages], dtype=np.float64)
 
-            self._current_step: int = -1
+        # факторы, которые будут изменяться во время моделирования
+        self._dynamic_factors: list[Factor] = [fa for fa in self._factors if fa.is_dynamic]
 
-        except Exception as e:
-            raise type(e)(f'In init model: {e}')
+        self._flows_weights: np.ndarray = np.zeros(len(flows), dtype=np.float64)
+        self._targets: np.ndarray = np.zeros((len(flows), len(stages)), dtype=np.float64)
+        self._induction_weights: np.ndarray = np.zeros((len(flows), len(stages)), dtype=np.float64)
+        self._outputs: np.ndarray = np.zeros((len(flows), len(stages)), dtype=np.bool)
 
-    def _take_step(self, step: int) -> None:
-        self._current_step = step
+        # связываем факторы, используемые в потоках, с матрицами
+        self._connect_matrix(flows)
+
+        self._duration = 1
+        self._result: np.ndarray = np.zeros((self._duration, len(stages)), dtype=np.float64)
+        self._result[0] = self._stage_starts
+        self._result_flows: Optional[np.ndarray] = None
+        self._result_factors: Optional[np.ndarray] = None
+
+        self._flows_probabs: np.ndarray = np.zeros(len(flows), dtype=np.float64)
+        self._flows_values: np.ndarray = np.zeros(len(flows), dtype=np.float64)
+        self._induction_mask: np.ndarray = self._induction_weights.any(axis=1)
+        self._induction: np.ndarray = self._induction_weights[self._induction_mask]
+
+        self._relativity_factors: bool = False
+        self.set_relativity_factors(relativity_factors)
+
+    def set_relativity_factors(self, relativity_factors: bool):
+        if not isinstance(relativity_factors, bool):
+            raise ModelError('relativity_factors must be bool')
+        for fl in self._flows:
+            fl.set_relativity_factors(relativity_factors)
+        self._relativity_factors = relativity_factors
+
+    def _update_all_factors(self):
         for fa in self._factors:
-            fa.update(step)
-            if fa.value < 0:
-                raise FactorError(f"'{fa.name}' value {fa.value} not in [0, 1]")
+            fa.update(0)
 
-        for fl in self._flows:
-            fl.check_end_factors()
-            fl.calc_send_probability()
+    def _update_dynamic_factors(self, step: int):
+        for fa in self._dynamic_factors:
+            fa.update(step-1)
 
-        for st in self._stages:
-            st.send_out_flow()
+    def _prepare_factors_matrix(self, *args):
+        self._iflow_weights = self._flows_weights[self._induction_mask].reshape(-1, 1)
+        self._flows_probabs[~self._induction_mask] = self._flows_weights[~self._induction_mask]
+        self._check_matrix()
 
-        fl_changes = []
-        for fl in self._flows:
-            fl_changes.append(fl.submit_changes())
+    def _check_matrix(self):
+        if (self._targets.sum(axis=1) != 1).any():
+            raise ModelError('Sum of targets one Flow must be 1')
+        if (self._flows_weights < 0).any():
+            raise ModelError('Flow weights must be >= 0')
+        if (self._flows_weights[~self._induction_mask] > 1).any():
+            raise ModelError('Not Induction Flow weights must be in range [0, 1]')
+        if self._relativity_factors and (self._flows_weights[self._induction_mask] > 1).any():
+            raise ModelError('Induction Flow weights, if they are relativity, must be in range [0, 1]')
+        if ((self._induction_weights < 0) | (self._induction_weights > 1)).any():
+            raise ModelError('Induction weights must be in range [0, 1]')
 
-        for st in self._stages:
-            st.apply_changes()
+    def _correct_not_rel_factors(self, *args):
+        self._flows_weights[self._induction_mask] /= self._stage_starts.sum()
 
-        self._result_df.loc[step + 1] = [st.num for st in self._stages]
-        self._factors_df.loc[step] = [fa.value for fa in self._factors]
+    def _connect_matrix(self, flows: list[Flow]):
+        for fl in flows:
+            fl.connect_matrix(self._flows_weights, self._targets, self._induction_weights, self._outputs)
 
-        old_flows = self._flows_df.loc[step] if step in self._flows_df.index else 0
-        self._flows_df.loc[step] = old_flows + np.array(fl_changes)
+    def _prepare(self):
+        self._update_all_factors()
+        if not self._relativity_factors:
+            self._correct_not_rel_factors()
+        self._prepare_factors_matrix()
 
-    def _set_population_size_flows(self) -> None:
-        population_size = sum(st.num for st in self._stages)
-        for flow in self._flows:
-            flow.set_population_size(population_size)
+    def start(self, duration: int, *, full_save: bool = False, stochastic: bool = False) -> pd.DataFrame:
+        self._duration = duration
+        self._start(full_save, stochastic)
 
-    def set_relativity_factors(self, relativity: bool) -> None:
-        if not isinstance(relativity, bool):
-            raise EpidemicModelError('relativity_factors must be bool')
-        for fl in self._flows:
-            fl.set_relativity_factors(relativity)
+        df = self._get_result_df()
+        return df
 
-    def _drop_df(self):
-        self._result_df.drop(self._result_df.index, inplace=True)
-        self._factors_df.drop(self._factors_df.index, inplace=True)
-        self._flows_df.drop(self._flows_df.index, inplace=True)
+    def _start(self, save_full: bool, stochastic: bool):
+        self._result = np.zeros((self._duration, len(self._stage_starts)), dtype=np.float64)
+        self._result[0] = self._stage_starts
 
-        self._result_df.loc[0] = [st.num for st in self._stages]
+        self._prepare()
 
-    def _set_flows_method(self, stochastic: bool) -> None:
-        method = Flow.STOCH_METHOD if stochastic else Flow.TEOR_METHOD
-        for fl in self._flows:
-            fl.set_method(method)
+        if not self._dynamic_factors and not save_full and not stochastic:
+            self._fast_run()
+            return
 
-    def _stoch_run(self, time: int):
-        step = 0
-        while step < time:
-            self._take_step(step)
-            step += poisson.rvs(mu=1)
+        self._full_step_seq: list[Callable] = []
+        if self._dynamic_factors:
+            self._full_step_seq.append(self._update_dynamic_factors)
+            if not self._relativity_factors:
+                self._full_step_seq.append(self._correct_not_rel_factors)
+            self._full_step_seq.append(self._prepare_factors_matrix)
 
-    def _determ_run(self, time: int):
-        for step in range(0, time):
-            self._take_step(step)
+        if stochastic:
+            self._full_step_seq.append(self._stoch_step)
+        else:
+            self._full_step_seq.append(self._determ_step)
 
-    def _reset_stage_nums(self):
-        for st in self._stages:
-            st.reset_num()
+        if save_full:
+            self._full_step_seq.append(self._save_additional_results)
+            self._result_flows = np.zeros((self._duration, len(self._flow_names)), dtype=np.float64)
+            self._result_factors = np.zeros((self._duration, len(self._factors_names)), dtype=np.float64)
+        else:
+            self._result_flows = None
+            self._result_factors = None
 
-    def _reindex_df(self, time: int):
-        full_index = np.arange(time + 1)
-        self._result_df = self._result_df.reindex(full_index, method='ffill')
-        self._flows_df = self._flows_df.reindex(full_index, fill_value=0)
-        self._factors_df = self._factors_df.reindex(full_index)
+        if stochastic:
+            self._stoch_run()
+        else:
+            self._determ_run()
 
-    def _restore_factors(self):
-        for fa in self._factors:
-            fa.restore_value()
+    def _determ_run(self):
+        for step in range(1, self._duration):
+            for step_func in self._full_step_seq:
+                step_func(step)
 
-    def drop_result(self):
-        self._drop_df()
-        self._restore_factors()
-        self._reset_stage_nums()
+    def _stoch_run(self):
+        step = 1
+        while step < self._duration:
+            for step_func in self._full_step_seq:
+                step_func(step)
+            new_step = step + poisson.rvs(mu=1)
+            self._result[step: new_step] = self._result[step]
+            step = new_step
 
-    def start(self, time: int, stochastic_time=False, stochastic_changes=False, **kwargs) -> pd.DataFrame:
-        self._current_step = -1
-        try:
-            self._set_population_size_flows()  # устанавливаем размеры населения в каждом из потоков
-            self._drop_df()  # удаляем предыдущие значения в таблицах
-            self.set_factors(**kwargs)  # устанавливаем временные значения факторов
-            self._set_flows_method(stochastic_changes)  # устанавливаем метод расчета потоков
+    def _fast_run(self):
+        for step in range(1, self._duration):
+            pr = self._result[step - 1]
+            a = np.array([1,2,3])
+            self._induction * self._iflow_weights
+            self._flows_probabs[self._induction_mask] = 1 - ((1 - self._induction * self._iflow_weights) ** pr).prod(axis=1)
 
-            if stochastic_time:  # если время моделирование стохастично
-                self._stoch_run(time)  # то запускаем моделирование стохастично
-            else:
-                self._determ_run(time)  # иначе запускаем моделирование детерминированно
-            self._reindex_df(time)  # переиндексируем таблицы (заполняем пропуски)
+            for st_i in range(len(self._stage_starts)):
+                self._flows_probabs[self._outputs[:, st_i]] = self._correct_p(
+                    self._flows_probabs[self._outputs[:, st_i]])
+                self._flows_values[self._outputs[:, st_i]] = self._flows_probabs[self._outputs[:, st_i]] * pr[st_i]
+            changes = self._flows_values @ self._targets - self._flows_values @ self._outputs
+            self._result[step] = pr + changes
 
-            self._reset_stage_nums()  # сбрасываем счетчики в стадиях
-            self._restore_factors()  # восстанавливаем предыдущие значения факторов
+    def _determ_step(self, step: int):
+        self._flows_probabs[self._induction_mask] = 1 - ((1 - self._induction * self._iflow_weights) **
+                                                         self._result[step - 1]).prod(axis=1)
 
-            return self.result_df
+        for st_i in range(len(self._stage_starts)):
+            self._flows_probabs[self._outputs[:, st_i]] = self._correct_p(self._flows_probabs[self._outputs[:, st_i]])
+            self._flows_values[self._outputs[:, st_i]] = self._flows_probabs[self._outputs[:, st_i]] * \
+                                                         self._result[step - 1][st_i]
+        changes = self._flows_values @ self._targets - self._flows_values @ self._outputs
+        self._result[step] = self._result[step - 1] + changes
 
-        except (FlowError, FactorError, StageError) as e:
-            raise type(e)(f'in {"start" if self._current_step == -1 else "step " + str(self._current_step)}: {e}')
+    def _stoch_step(self, step: int):
+        self._flows_probabs[self._induction_mask] = 1 - ((1 - self._induction * self._iflow_weights) **
+                                                         self._result[step - 1]).prod(axis=1)
 
-    def _get_table(self, table_df: pd.DataFrame) -> PrettyTable:
+        for st_i in range(len(self._stage_starts)):
+            self._flows_probabs[self._outputs[:, st_i]] = self._correct_p(self._flows_probabs[self._outputs[:, st_i]])
+            flow_values = self._flows_probabs[self._outputs[:, st_i]] * self._result[step - 1][st_i]
+            flow_values = poisson.rvs(flow_values, size=len(flow_values))
+            flows_sum = flow_values.sum()
+            if flows_sum > self._result[step - 1][st_i]:
+                # находим избыток всех потоков ушедших из стадии st_i
+                # распределим (вычтем) этот избыток из всех потоков пропорционально значениям потоков
+                excess = flows_sum - self._result[step-1][st_i]
+                flow_values = flow_values - flow_values / flows_sum * excess
+            self._flows_values[self._outputs[:, st_i]] = flow_values
+        changes = self._flows_values @ self._targets - self._flows_values @ self._outputs
+        self._result[step] = self._result[step - 1] + changes
+
+    def _save_additional_results(self, step: int):
+        self._result_flows[step-1] = self._flows_values
+        self._result_factors[step-1] = [fa.value for fa in self._factors]
+
+    @classmethod
+    def get_table(cls, table_df: pd.DataFrame) -> PrettyTable:
         table = PrettyTable()
         table.add_column('step', table_df.index.tolist())
         for col in table_df:
             table.add_column(col, table_df[col].tolist())
-        table.float_format = f".{self.__len_float}"
+        table.float_format = f".{cls.__len_float}"
         return table
 
+    def _get_result_df(self) -> pd.DataFrame:
+        result = pd.DataFrame(self._result, columns=self._stage_names)
+        return result.reindex(np.arange(self._duration), method='ffill')
+
+    def _get_factors_df(self) -> pd.DataFrame:
+        factors = pd.DataFrame(self._result_factors, columns=[fa.name for fa in self._factors])
+        return factors.reindex(np.arange(self._duration))
+
+    def _get_flows_df(self) -> pd.DataFrame:
+        flows = pd.DataFrame(self._result_flows, columns=list(self._flow_names))
+        return flows.reindex(np.arange(self._duration), fill_value=0)
+
+    def _get_full_df(self) -> pd.DataFrame:
+        return pd.concat([self._get_result_df(), self._get_flows_df(), self._get_factors_df()], axis=1)
+
+    @property
+    def result_df(self):
+        return self._get_result_df()
+
+    @property
+    def full_df(self):
+        return self._get_full_df()
+
+    @property
+    def flows_df(self):
+        return self._get_flows_df()
+
+    @property
+    def factors_df(self):
+        return self._get_factors_df()
+
     def print_result_table(self) -> None:
-        print(self._get_table(self._result_df))
+        print(self.get_table(self._get_result_df()))
 
     def print_factors_table(self) -> None:
-        print(self._get_table(self._factors_df))
+        print(self.get_table(self._get_factors_df()))
 
     def print_flows_table(self) -> None:
-        print(self._get_table(self._flows_df))
+        print(self.get_table(self._get_flows_df()))
 
     def print_full_result(self) -> None:
-        print(self._get_table(self.full_df))
+        print(self.get_table(self._get_full_df()))
 
     @property
     def name(self) -> str:
         return self._name
-
-    @property
-    def result_df(self) -> pd.DataFrame:
-        return self._result_df.copy(deep=True)
-
-    @property
-    def factors_df(self) -> pd.DataFrame:
-        return self._factors_df.copy(deep=True)
-
-    @property
-    def flows_df(self) -> pd.DataFrame:
-        return self._flows_df.copy(deep=True)
-
-    @property
-    def full_df(self) -> pd.DataFrame:
-        df = pd.concat([self._result_df, self._flows_df, self._factors_df], axis=1)
-        df.sort_index(inplace=True)
-        return df
 
     def _write_table(self, filename: str, table: pd.DataFrame, floating_point='.', delimiter=',') -> None:
         table.to_csv(filename, sep=delimiter, decimal=floating_point,
@@ -205,22 +277,35 @@ class EpidemicModel:
             path = path + '\\'
 
         current_time = datetime.today().strftime('%d_%b_%y_%H-%M-%S')
-        first_part = f'{path}{self._name}_{current_time}'
-        self._write_table(f'{first_part}_result.csv', self._result_df, floating_point, delimiter)
+        filename = f'{path}{self._name}_result_{current_time}.csv'
+
+        tables = [self._get_result_df()]
         if write_flows:
-            self._write_table(f'{first_part}_flows.csv', self._flows_df, floating_point, delimiter)
+            if self._result_flows is None:
+                print('Warning: Results for flows should be saved while model is running')
+            else:
+                tables.append(self._get_flows_df())
         if write_factors:
-            self._write_table(f'{first_part}_factors.csv', self._factors_df, floating_point, delimiter)
+            if self._result_factors is None:
+                print('Warning: Results for factors should be saved while model is running')
+            else:
+                tables.append(self._get_factors_df())
+        final_table = pd.concat(tables, axis=1)
+        self._write_table(filename, final_table, floating_point, delimiter)
 
     def set_factors(self, **kwargs) -> None:
         for f in self._factors:
             if f.name in kwargs:
-                f.set_fvalue(kwargs[f.name], save_previous=True)
+                f.set_fvalue(kwargs[f.name])
+
+        self._dynamic_factors = [f for f in self._factors if f.is_dynamic]
 
     def set_start_stages(self, **kwargs) -> None:
-        for s in self._stages:
+        for s_index, s  in enumerate(self._stages):
             if s.name in kwargs:
                 s.num = kwargs[s.name]
+                self._stage_starts[s_index] = kwargs[s.name]
+
 
     def __str__(self) -> str:
         return f'Model({self._name})'
@@ -264,4 +349,27 @@ class EpidemicModel:
             st.clear_latex_terms()
 
         return system_of_equations
+
+    @staticmethod
+    def _correct_p(probs: np.ndarray) -> np.ndarray:
+        # матрица случившихся событий
+        happened_matrix = np.array(list(product([0, 1], repeat=len(probs))), dtype=np.bool)
+
+        # вектор вероятностей каждого сценария
+        # те что свершились с исходной вероятностью, а не свершились - (1 - вероятность)
+        full_probs = (probs * happened_matrix + (1 - probs) * (~happened_matrix)).prod(axis=1)
+
+        # делим на то сколько событий произошло, в каждом сценарии
+        # в первом случае ни одно событие не произошло, значит делить придётся на 0
+        # а случай этот не пригодится
+        full_probs[1:] = full_probs[1:] / happened_matrix[1:].sum(axis=1)
+
+        # новые вероятности
+        # по сути сумма вероятностей сценариев, в которых нужное событие произошло
+        new_probs = np.zeros_like(probs)
+        for i in range(len(probs)):
+            new_probs[i] = full_probs[happened_matrix[:, i]].sum()
+        return new_probs
+
+
 

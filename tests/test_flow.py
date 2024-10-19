@@ -1,4 +1,4 @@
-from epidemmo.stage import Stage, StageError
+from epidemmo.stage import Stage
 from epidemmo.flow import Flow, FlowError
 from epidemmo.factor import Factor, FactorError
 
@@ -7,10 +7,10 @@ import pytest
 
 @pytest.fixture()
 def get_simple_flow():
-    s = Stage('S', 10)
-    i = Stage('I', 0)
+    s = Stage('S', 10, index=0)
+    i = Stage('I', 0, index=1)
     beta = Factor('beta', 0.4)
-    fl = Flow(s, {i: 1}, beta, {})
+    fl = Flow(s, {i: 1}, beta, {}, index=0)
     return s, i, beta, fl
 
 

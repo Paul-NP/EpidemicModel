@@ -1,6 +1,9 @@
 from __future__ import annotations
-from typing import Callable, Optional, Literal, Any
+from typing import Callable, Optional, Literal, Any, Sequence
 from types import FunctionType
+
+import numpy as np
+from numpy.typing import NDArray
 
 
 class FactorError(Exception):
@@ -21,41 +24,55 @@ class Factor:
             raise FactorError(f'The factor name "{name}" has an invalid length. Valid range '
                               f'[{cls.__MIN_NAME_LEN}, {cls.__MAX_NAME_LEN}]')
 
-    def __init__(self, name: str, value: int | float | Callable[[int], float]) -> None:
+    def __init__(self, name: str, value: int | float | Callable[[int], float] | Sequence[int | float]) -> None:
         self.__check_name(name)
 
         self._name: str = name
         self._value: float = 0
         self._func: Optional[Callable[[int], float]] = None
+        self._array: Optional[NDArray] = None
+
         self._latex_repr: Optional[str] = None
 
-        self._previous_fvalue: Optional[Callable[[int], float] | float] = None
+        self._update_func: Callable = self._update_static
 
         self.set_fvalue(value)
 
-    def set_fvalue(self, value: int | float | Callable[[int], float], save_previous: bool = False) -> None:
-        if save_previous:
-            self._previous_fvalue = self.get_fvalue()
-        else:
-            self._previous_fvalue = None
+        self._connected_matrix: list[NDArray] = []
+        self._value_pos_in_matrix: list[int | tuple[int, int]] = []
+
+    def connect_matrix(self, matrix: NDArray, value_pos_in_matrix: int | tuple[int, int]) -> None:
+        self._connected_matrix.append(matrix)
+        self._value_pos_in_matrix.append(value_pos_in_matrix)
+        matrix[value_pos_in_matrix] = self._value
+
+    def set_fvalue(self, value: int | float | Callable[[int], float] | Sequence[int | float]) -> None:
         match value:
             case int(value) | float(value):
                 self._value = float(value)
                 self._func = None
+                self._array = None
+                self._update_func = self._update_static
             case FunctionType() as func:
                 self._value = func(0)
                 self._func = func
+                self._array = None
+                self._update_func = self._update_dynamic
+            case array if isinstance(array, (list, tuple, np.ndarray)):
+                print('added array factor')
+                self._array = np.array([float(v) for v in array], dtype=np.float64)
+                self._value = self._array[0]
+                self._func = None
+                self._update_func = self._update_array
             case _:
                 raise FactorError('invalid value for Factor, value can be int | float | Callable[[int], float]')
 
-    def get_fvalue(self) -> Callable[[int], float] | float:
+    def get_fvalue(self) -> Callable[[int], float] | float | NDArray:
         if self._func is not None:
             return self._func
+        elif self._array is not None:
+            return self._array
         return self._value
-
-    def restore_value(self) -> None:
-        if self._previous_fvalue is not None:
-            self.set_fvalue(self._previous_fvalue, save_previous=False)
 
     @staticmethod
     def may_be_factor(value: Any) -> bool:
@@ -65,18 +82,37 @@ class Factor:
             try:
                 result = value(0)
                 return isinstance(result, (float, int))
-            except Exception:
+            except Exception as e:
+                return False
+        elif isinstance(value, (list, tuple, np.ndarray)):
+            try:
+                return bool([float(v) for v in value])
+            except Exception as e:
                 return False
         else:
             return False
 
     def update(self, time: int) -> None:
-        if self._func is not None:
-            try:
-                res = self._func(time)
-            except Exception:
-                raise FactorError(f"factor '{self}' cannot be calculated with argument {time}")
-            self._value = res
+        self._update_func(time)
+        for matrix, value_pos_in_matrix in zip(self._connected_matrix, self._value_pos_in_matrix):
+            matrix[value_pos_in_matrix] = self._value
+
+    def _update_static(self, time: int) -> None:
+        pass
+
+    def _update_dynamic(self, time: int) -> None:
+        try:
+            res = self._func(time)
+        except Exception:
+            raise FactorError(f"factor '{self}' cannot be calculated in time {time}")
+        self._value = res
+
+    def _update_array(self, time: int) -> None:
+        try:
+            res = self._array[time]
+        except Exception:
+            raise FactorError(f"factor '{self}' cannot be calculated in time {time}, array is ended")
+        self._value = res
 
     @property
     def value(self) -> float:
@@ -84,17 +120,11 @@ class Factor:
 
     @property
     def is_dynamic(self) -> bool:
-        return self._func is not None
+        return self._func is not None or self._array is not None
 
     @property
     def name(self) -> str:
         return self._name
-
-    @name.setter
-    def name(self, name: str) -> None:
-        if not isinstance(name, str) or name == '':
-            raise FactorError('invalid name for Factor, name must be not empty string')
-        self._name = name
 
     def __str__(self) -> str:
         return self._name
