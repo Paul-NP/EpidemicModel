@@ -62,6 +62,10 @@ class EpidemicModel:
         self._relativity_factors: bool = False
         self.set_relativity_factors(relativity_factors)
 
+    @property
+    def population_size(self) -> int:
+        return self._stage_starts.sum()
+
     def set_relativity_factors(self, relativity_factors: bool):
         if not isinstance(relativity_factors, bool):
             raise ModelError('relativity_factors must be bool')
@@ -95,7 +99,7 @@ class EpidemicModel:
             raise ModelError('Induction weights must be in range [0, 1]')
 
     def _correct_not_rel_factors(self, *args):
-        self._flows_weights[self._induction_mask] /= self._stage_starts.sum()
+        self._flows_weights[self._induction_mask] /= self.population_size
 
     def _connect_matrix(self, flows: list[Flow]):
         for fl in flows:
@@ -318,8 +322,16 @@ class EpidemicModel:
         return [{'name': st.name, 'num': st.start_num} for st in self._stages]
 
     @property
+    def stage_names(self) -> list[str]:
+        return list(self._stage_names)
+
+    @property
     def factors(self) -> list[dict[str, float]]:
         return [{'name': fa.name, 'value': 'dynamic' if fa.is_dynamic else fa.value} for fa in self._factors]
+
+    @property
+    def factor_names(self) -> list[str]:
+        return list(self._factors_names)
 
     @property
     def flows(self) -> list[dict]:
@@ -330,6 +342,10 @@ class EpidemicModel:
                        'inducing': {st.name: fa.name for st, fa in fl.inducing.items()}}
             flows.append(fl_dict)
         return flows
+
+    @property
+    def flow_names(self) -> list[str]:
+        return list(self._flow_names)
 
     def get_latex(self, simplified: bool = False) -> str:
         for fl in self._flows:

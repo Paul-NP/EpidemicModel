@@ -94,6 +94,12 @@ def test_standard_sir(sir_result10):
     result = model.start(10).to_numpy().round(2).T.ravel().tolist()
     assert result == pytest.approx(sir_result10, abs=0.01)
 
+def test_sir_relative(sir_result10):
+    model = Standard.get_SIR_builder().build()
+    model.set_relativity_factors(True)
+    model.set_factors(beta=0.004)
+    result = model.start(10).to_numpy().round(2).T.ravel().tolist()
+    assert result == pytest.approx(sir_result10, abs=0.01)
 
 def test_standard_seir(seir_result10):
     model = Standard.get_SEIR_builder().build()
