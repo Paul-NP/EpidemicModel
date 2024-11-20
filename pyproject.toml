@@ -9,7 +9,7 @@ readme = 'readme.md'
 requires-python = '>=3.11'
 authors = [{name='Podzolkov Pavel', email='ppodzolkoff@gmail.com'}]
 description = "A package for compartmental epidemic modelling"
-dependencies = ["numpy >= 2.0", "pandas >= 2.2", "scipy >= 1.14", "prettytable >= 3.10"]
+dependencies = ["numpy >= 2.0", "pandas >= 2.2", "scipy >= 1.14", "prettytable >= 3.10", "sklearn"]
 classifiers = ["Programming Language :: Python :: 3",
                "License :: OSI Approved :: MIT License",
                "Operating System :: OS Independent",
