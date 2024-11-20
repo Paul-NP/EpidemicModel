@@ -127,7 +127,10 @@ class Factor:
         return self._name
 
     def __str__(self) -> str:
-        return self._name
+        return f'Factor({self._name})'
+
+    def __repr__(self) -> str:
+        return f'Factor({self._name}, {self._value})' if not self.is_dynamic else f'Factor({self._name}, dynamic)'
 
     def set_latex_repr(self, latex_repr: Optional[str]) -> None:
         if latex_repr is not None and not isinstance(latex_repr, str):

@@ -8,5 +8,5 @@ def test_save_sir(tmp_path):
     sir = Standard.get_SIR_builder().build()
     io.save(sir, filename)
     sir2 = io.load(filename)
-    assert repr(sir2) == 'Model(SIR): [F(S>I|by-I), F(I>R|by-)]'
+    assert repr(sir2) == 'Model(SIR): [Flow(S>I|by-I), Flow(I>R|spontaneous)]'
 

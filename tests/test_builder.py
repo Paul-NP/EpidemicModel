@@ -43,13 +43,13 @@ def test_existing_factor():
 def test_add_simple_flow(builder):
     builder.add_flow('S', 'I', 'beta')
     flow = builder._flows[0]
-    assert str(flow) == 'F(S>I)'
+    assert str(flow) == 'Flow(S>I)'
 
 
 def test_two_target_flow(builder):
     builder.add_flow('S', {'I': 0.4, 'R': 0.6}, 'beta')
     flow = builder._flows[0]
-    assert str(flow) == 'F(S>I,R)'
+    assert str(flow) == 'Flow(S>I,R)'
 
 
 def test_add_induced_flow(builder):

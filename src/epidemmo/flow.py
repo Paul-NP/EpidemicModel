@@ -159,8 +159,8 @@ class Flow:
     def _generate_names(start_name: str, end_names: list[str], ind_names: list[str]) -> tuple[str, str]:
         ends = ','.join(sorted(end_names))
         induced = ','.join(sorted(ind_names))
-        name = f'{start_name}>{ends}'
-        full_name = f'F({start_name}>{ends}|by-{induced})' if induced else f'F({start_name}>{ends}|spontaneous)'
+        name = f'Flow({start_name}>{ends})'
+        full_name = f'Flow({start_name}>{ends}|by-{induced})' if induced else f'Flow({start_name}>{ends}|spontaneous)'
         return name, full_name
 
     def is_similar(self, other: Flow) -> bool:

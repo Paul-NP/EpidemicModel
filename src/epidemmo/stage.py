@@ -68,7 +68,7 @@ class Stage:
         return f"Stage({self._name})"
 
     def __repr__(self) -> str:
-        return f"Stage({self._name}) | {self._start_num:.{self.__FLOAT_LEN}f}"
+        return f"Stage({self._name}, {self._start_num:.{self.__FLOAT_LEN}f})"
 
     def add_latex_out(self, term: str) -> None:
         self._latex_outs.append(term)

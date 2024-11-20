@@ -112,6 +112,13 @@ class EpidemicModel:
         self._prepare_factors_matrix()
 
     def start(self, duration: int, *, full_save: bool = False, stochastic: bool = False) -> pd.DataFrame:
+        if not isinstance(duration, int) or duration < 1:
+            raise ModelError('duration must be int > 1')
+        if not isinstance(full_save, bool):
+            raise ModelError('full_save must be bool')
+        if not isinstance(stochastic, bool):
+            raise ModelError('stochastic must be bool')
+
         self._duration = duration
         self._start(full_save, stochastic)
 
@@ -307,9 +314,8 @@ class EpidemicModel:
     def set_start_stages(self, **kwargs) -> None:
         for s_index, s  in enumerate(self._stages):
             if s.name in kwargs:
-                s.num = kwargs[s.name]
+                s.start_num = kwargs[s.name]
                 self._stage_starts[s_index] = kwargs[s.name]
-
 
     def __str__(self) -> str:
         return f'Model({self._name})'
@@ -319,7 +325,11 @@ class EpidemicModel:
 
     @property
     def stages(self) -> list[dict[str, float]]:
-        return [{'name': st.name, 'num': st.start_num} for st in self._stages]
+        return [{'name': st.name, 'num': float(st.start_num)} for st in self._stages]
+
+    @property
+    def stages_dict(self) -> dict[str, float]:
+        return {st.name: float(st.start_num) for st in self._stages}
 
     @property
     def stage_names(self) -> list[str]:
@@ -328,6 +338,10 @@ class EpidemicModel:
     @property
     def factors(self) -> list[dict[str, float]]:
         return [{'name': fa.name, 'value': 'dynamic' if fa.is_dynamic else fa.value} for fa in self._factors]
+
+    @property
+    def factors_dict(self) -> dict[str, float | str]:
+        return {fa.name: 'dynamic' if fa.is_dynamic else fa.value for fa in self._factors}
 
     @property
     def factor_names(self) -> list[str]:
