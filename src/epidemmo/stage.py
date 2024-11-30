@@ -1,9 +1,5 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING, Optional
-from numpy.typing import NDArray
-
-if TYPE_CHECKING:
-    from .flow import Flow
 
 
 class StageError(Exception):

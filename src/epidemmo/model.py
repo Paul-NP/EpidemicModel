@@ -1,17 +1,18 @@
-from datetime import datetime
+from typing import Optional, Callable
 
 import numpy as np
-from itertools import product
+
 import pandas as pd
+from itertools import product
+
+from matplotlib import pyplot as plt
 from prettytable import PrettyTable
+from scipy.stats import poisson
+from datetime import datetime
 
 from .flow import Flow
 from .stage import Stage
 from .factor import Factor
-from scipy.stats import poisson
-
-
-from typing import Optional, Callable
 
 
 class ModelError(Exception):
@@ -53,6 +54,7 @@ class EpidemicModel:
         self._result[0] = self._stage_starts
         self._result_flows: Optional[np.ndarray] = None
         self._result_factors: Optional[np.ndarray] = None
+        self._confidence: Optional[np.ndarray] = None
 
         self._flows_probabs: np.ndarray = np.zeros(len(flows), dtype=np.float64)
         self._flows_values: np.ndarray = np.zeros(len(flows), dtype=np.float64)
@@ -64,9 +66,16 @@ class EpidemicModel:
 
     @property
     def population_size(self) -> int:
+        """
+        :return: Размер популяции
+        """
         return self._stage_starts.sum()
 
     def set_relativity_factors(self, relativity_factors: bool):
+        """
+        :param relativity_factors: относительные ли факторы (относительные - не будут делиться на размер популяции)
+        :return:
+        """
         if not isinstance(relativity_factors, bool):
             raise ModelError('relativity_factors must be bool')
         for fl in self._flows:
@@ -111,7 +120,18 @@ class EpidemicModel:
             self._correct_not_rel_factors()
         self._prepare_factors_matrix()
 
-    def start(self, duration: int, *, full_save: bool = False, stochastic: bool = False) -> pd.DataFrame:
+    def start(self, duration: int, *, full_save: bool = False, stochastic: bool = False,
+              get_cis: bool = False, num_cis_starts: int = 100, cis_significance: float = 0.05) -> pd.DataFrame:
+        """
+        Запускает модель и возвращает таблицу результатов
+        :param duration: длительность моделирования
+        :param full_save: вычислить ли все результаты (+потоки, +факторы)
+        :param stochastic: запускать ли модель в стохастическом режиме
+        :param get_cis: вычислить ли доверительные интервалы
+        :param num_cis_starts: количество стохастических запусков для вычисления доверительных интервалов
+        :param cis_significance: уровень значимости для доверительных интервалов
+        :return: таблица результатов, столбцы - стадии, строки - шаги моделирования
+        """
         if not isinstance(duration, int) or duration < 1:
             raise ModelError('duration must be int > 1')
         if not isinstance(full_save, bool):
@@ -120,8 +140,11 @@ class EpidemicModel:
             raise ModelError('stochastic must be bool')
 
         self._duration = duration
-        self._start(full_save, stochastic)
 
+        if get_cis:
+            self._get_confidence_intervals(num_cis_starts, cis_significance)
+
+        self._start(full_save, stochastic)
         df = self._get_result_df()
         return df
 
@@ -149,8 +172,8 @@ class EpidemicModel:
 
         if save_full:
             self._full_step_seq.append(self._save_additional_results)
-            self._result_flows = np.zeros((self._duration, len(self._flow_names)), dtype=np.float64)
-            self._result_factors = np.zeros((self._duration, len(self._factors_names)), dtype=np.float64)
+            self._result_flows = np.full((self._duration, len(self._flow_names)), np.nan,  dtype=np.float64)
+            self._result_factors = np.full((self._duration, len(self._factors_names)), np.nan, dtype=np.float64)
         else:
             self._result_flows = None
             self._result_factors = None
@@ -160,24 +183,79 @@ class EpidemicModel:
         else:
             self._determ_run()
 
+    def _several_stoch_starts(self, count: int):
+        all_results = np.zeros((count, self._duration, len(self._stage_starts)), dtype=np.float64)
+        all_results[:, 0, :] = self._stage_starts
+
+        self._full_step_seq: list[Callable] = []
+        if self._dynamic_factors:
+            self._full_step_seq.append(self._update_dynamic_factors)
+            if not self._relativity_factors:
+                self._full_step_seq.append(self._correct_not_rel_factors)
+            self._full_step_seq.append(self._prepare_factors_matrix)
+        self._full_step_seq.append(self._stoch_step)
+
+        for i in range(count):
+            self._result = all_results[i]
+            self._prepare()
+            self._stoch_run()
+
+        return all_results
+
+    def _get_confidence_intervals(self, num_starts: int, alpha_cis: float = 0.05):
+        if not isinstance(num_starts, int) or num_starts < 1:
+            raise ModelError('Number of starts for calculating confidence intervals must be int > 1')
+        if not isinstance(alpha_cis, float) or alpha_cis < 0 or alpha_cis > 1:
+            raise ModelError(f'Alpha for calculating confidence intervals must be float in range [0, 1], but got {alpha_cis}')
+
+        results = self._several_stoch_starts(num_starts) # для получения набора стохастических результатов
+        self._start(False, False) # для получения теоретического результата в self._result
+        self._confidence = self._calc_confidence_intervals(results, self._result, alpha_cis)
+
+    @staticmethod
+    def _calc_confidence_intervals(stoch_results: np.array, mid_result: np.array, alpha_cis: float = 0.05):
+        down_limit = alpha_cis * 100
+        up_limit = (1 - alpha_cis) * 100
+        num_runs, duration, num_stages = stoch_results.shape
+        confidence = np.zeros((duration, num_stages * 2))
+        for st_i in range(num_stages):
+            for time in range(duration):
+                low_results = stoch_results[stoch_results[:, time, st_i] < mid_result[time, st_i], time, st_i]
+                if len(low_results):
+                    conf_low = np.percentile(low_results, [down_limit], axis=0)[0]
+                else:
+                    conf_low = mid_result[time, st_i]
+
+                up_results = stoch_results[stoch_results[:, time, st_i] > mid_result[time, st_i], time, st_i]
+                if len(up_results):
+                    conf_up = np.percentile(up_results, [up_limit], axis=0)[0]
+                else:
+                    conf_up = mid_result[time, st_i]
+
+                confidence[time, st_i * 2: st_i * 2 + 2] = [conf_low, conf_up]
+        return confidence
+
     def _determ_run(self):
         for step in range(1, self._duration):
+            self._result[step] = self._result[step - 1]
             for step_func in self._full_step_seq:
                 step_func(step)
 
     def _stoch_run(self):
-        step = 1
+        step = 0
+        shift = poisson.rvs(mu=1)
+        self._result[step: step + shift + 1] = self._result[step]
+        step = step + shift
         while step < self._duration:
             for step_func in self._full_step_seq:
                 step_func(step)
-            new_step = step + poisson.rvs(mu=1)
-            self._result[step: new_step] = self._result[step]
-            step = new_step
+            shift = poisson.rvs(mu=1)
+            self._result[step: step + shift + 1] = self._result[step]
+            step = step + shift
 
     def _fast_run(self):
         for step in range(1, self._duration):
             pr = self._result[step - 1]
-            a = np.array([1,2,3])
             self._induction * self._iflow_weights
             self._flows_probabs[self._induction_mask] = 1 - ((1 - self._induction * self._iflow_weights) ** pr).prod(axis=1)
 
@@ -190,43 +268,44 @@ class EpidemicModel:
 
     def _determ_step(self, step: int):
         self._flows_probabs[self._induction_mask] = 1 - ((1 - self._induction * self._iflow_weights) **
-                                                         self._result[step - 1]).prod(axis=1)
+                                                         self._result[step]).prod(axis=1)
 
         for st_i in range(len(self._stage_starts)):
             self._flows_probabs[self._outputs[:, st_i]] = self._correct_p(self._flows_probabs[self._outputs[:, st_i]])
             self._flows_values[self._outputs[:, st_i]] = self._flows_probabs[self._outputs[:, st_i]] * \
-                                                         self._result[step - 1][st_i]
+                                                         self._result[step][st_i]
         changes = self._flows_values @ self._targets - self._flows_values @ self._outputs
-        self._result[step] = self._result[step - 1] + changes
+        self._result[step] += changes
 
     def _stoch_step(self, step: int):
         self._flows_probabs[self._induction_mask] = 1 - ((1 - self._induction * self._iflow_weights) **
-                                                         self._result[step - 1]).prod(axis=1)
+                                                         self._result[step]).prod(axis=1)
 
         for st_i in range(len(self._stage_starts)):
             self._flows_probabs[self._outputs[:, st_i]] = self._correct_p(self._flows_probabs[self._outputs[:, st_i]])
-            flow_values = self._flows_probabs[self._outputs[:, st_i]] * self._result[step - 1][st_i]
+            flow_values = self._flows_probabs[self._outputs[:, st_i]] * self._result[step][st_i]
             flow_values = poisson.rvs(flow_values, size=len(flow_values))
             flows_sum = flow_values.sum()
-            if flows_sum > self._result[step - 1][st_i]:
+            if flows_sum > self._result[step][st_i]:
                 # находим избыток всех потоков ушедших из стадии st_i
                 # распределим (вычтем) этот избыток из всех потоков пропорционально значениям потоков
-                excess = flows_sum - self._result[step-1][st_i]
+                excess = flows_sum - self._result[step][st_i]
                 flow_values = flow_values - flow_values / flows_sum * excess
             self._flows_values[self._outputs[:, st_i]] = flow_values
         changes = self._flows_values @ self._targets - self._flows_values @ self._outputs
-        self._result[step] = self._result[step - 1] + changes
+        self._result[step] += changes
 
     def _save_additional_results(self, step: int):
         self._result_flows[step-1] = self._flows_values
         self._result_factors[step-1] = [fa.value for fa in self._factors]
 
     @classmethod
-    def get_table(cls, table_df: pd.DataFrame) -> PrettyTable:
+    def _get_table(cls, table_df: pd.DataFrame) -> PrettyTable:
         table = PrettyTable()
         table.add_column('step', table_df.index.tolist())
         for col in table_df:
-            table.add_column(col, table_df[col].tolist())
+            col_name = f'{col[0]}_{col[1]}' if isinstance(col, tuple) else str(col)
+            table.add_column(col_name, table_df[col].tolist())
         table.float_format = f".{cls.__len_float}"
         return table
 
@@ -236,45 +315,75 @@ class EpidemicModel:
 
     def _get_factors_df(self) -> pd.DataFrame:
         factors = pd.DataFrame(self._result_factors, columns=[fa.name for fa in self._factors])
-        return factors.reindex(np.arange(self._duration))
+        return factors
 
     def _get_flows_df(self) -> pd.DataFrame:
-        flows = pd.DataFrame(self._result_flows, columns=list(self._flow_names))
-        return flows.reindex(np.arange(self._duration), fill_value=0)
+        flows = pd.DataFrame(self._result_flows, columns=self._flow_names)
+        flows.fillna(0, inplace=True)
+        return flows
 
     def _get_full_df(self) -> pd.DataFrame:
-        return pd.concat([self._get_result_df(), self._get_flows_df(), self._get_factors_df()], axis=1)
+        return pd.concat([self._get_result_df(), self._get_flows_df(),
+                          self._get_factors_df(), self._get_conf_df()], axis=1)
+
+    def _get_conf_df(self):
+        col_names = [(st_name, limit) for st_name in self._stage_names for limit in ['lower', 'upper']]
+        index = pd.MultiIndex.from_tuples(col_names, names=['stage', 'limit'])
+        conf_df = pd.DataFrame(self._confidence, columns=index)
+        return conf_df.reindex(np.arange(self._duration))
 
     @property
-    def result_df(self):
+    def result_df(self) -> pd.DataFrame:
+        """
+        :return: Таблица результатов, численность каждой стадии во времени
+        """
         return self._get_result_df()
 
     @property
-    def full_df(self):
+    def full_df(self) -> pd.DataFrame:
+        """
+        :return: Таблица результатов, численность каждой стадии во времени,
+        """
         return self._get_full_df()
 
     @property
-    def flows_df(self):
+    def flows_df(self) -> pd.DataFrame:
+        """
+        :return: Таблица потоков, интенсивность (численность) каждого потока (перехода) во времени
+        """
         return self._get_flows_df()
 
     @property
     def factors_df(self):
+        """
+        :return: Таблица факторов (параметров модели), значение каждого фактора во времени
+        """
         return self._get_factors_df()
 
+    @property
+    def confidence_df(self):
+        """
+        :return: Таблица доверительных интервалов, верхняя и нижняя границы для численности каждой стадии во времени
+        """
+        return self._get_conf_df()
+
     def print_result_table(self) -> None:
-        print(self.get_table(self._get_result_df()))
+        print(self._get_table(self._get_result_df()))
 
     def print_factors_table(self) -> None:
-        print(self.get_table(self._get_factors_df()))
+        print(self._get_table(self._get_factors_df()))
 
     def print_flows_table(self) -> None:
-        print(self.get_table(self._get_flows_df()))
+        print(self._get_table(self._get_flows_df()))
 
-    def print_full_result(self) -> None:
-        print(self.get_table(self._get_full_df()))
+    def print_full_table(self) -> None:
+        print(self._get_table(self._get_full_df()))
 
     @property
     def name(self) -> str:
+        """
+        :return: Название модели
+        """
         return self._name
 
     def _write_table(self, filename: str, table: pd.DataFrame, floating_point='.', delimiter=',') -> None:
@@ -283,7 +392,14 @@ class EpidemicModel:
 
     def write_results(self, floating_point='.', delimiter=',', path: str = '',
                       write_flows: bool = False, write_factors: bool = False) -> None:
-
+        """
+        Сохраняет результаты модели в csv-файл
+        :param floating_point: десятичная точка
+        :param delimiter: разделитель в таблице
+        :param path: путь для сохранения
+        :param write_flows: сохранять ли столбцы с результатами по потокам
+        :param write_factors: сохранять ли столбцы с результатами по факторам
+        """
         if path and path[-1] != '\\':
             path = path + '\\'
 
@@ -380,8 +496,35 @@ class EpidemicModel:
 
         return system_of_equations
 
+    def plot(self, ax: plt.Axes = None) -> plt.Axes:
+        if ax is None:
+            fig, ax = plt.subplots(1, 1)
+        self._plot(ax)
+        return ax
+
+    def _plot(self, ax: plt.Axes) -> None:
+        result = self._get_result_df()
+        colors = []
+
+        for sname in self._stage_names:
+            p = ax.plot(result[sname], label=sname)
+            colors.append(p[0].get_color())
+
+        if self._confidence is not None:
+            conf = self._get_conf_df()
+            for stage, color in zip(self._stage_names, colors):
+                ax.fill_between(conf.index, conf[(stage, 'lower')], conf[(stage, 'upper')], color=color, alpha=0.2,
+                                label=f'доверительный интервал для {stage}')
+
+        ax.set_title(self._name)
+        ax.set_xlabel('время')
+        ax.set_ylabel('количество индивидов')
+        ax.grid()
+        ax.legend()
+
     @staticmethod
     def _correct_p(probs: np.ndarray) -> np.ndarray:
+        # return probs
         # матрица случившихся событий
         happened_matrix = np.array(list(product([0, 1], repeat=len(probs))), dtype=np.bool)
 

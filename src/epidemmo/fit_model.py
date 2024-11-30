@@ -1,7 +1,5 @@
-from turtledemo.penrose import start
 from typing import Optional, Literal
 
-import matplotlib.pyplot as plt
 import scipy.optimize as opt
 from scipy.ndimage import uniform_filter1d
 from sklearn.metrics import mean_squared_error as mse

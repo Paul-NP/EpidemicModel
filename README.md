@@ -22,14 +22,12 @@ builder.add_factor('beta', 0.4).add_factor('gamma', 0.1)
 builder.add_flow('S', 'I', 'beta', 'I').add_flow('I', 'R', 'gamma')
 
 model = builder.build()
-result_df = model.start(70)
+model.print_result_table()
 
-result_df.plot(title='SIR', ylabel='population', xlabel='time')
+model.plot()
+
 plt.show()
 ```
-
-`start(70)` - метод, который принимает длительность моделирования, а возвращает pd.DataFrame с результатами моделирования.
-
 
 ### Результаты моделирования
 
@@ -66,17 +64,17 @@ model = Standard.get_SIR_builder().build()
 model.start(60)
 model.print_result_table()
 ```
-или записать результаты в csv файлы, включая
-1. файл с изменением численности каждой стадии
-2. файл с изменением значений всех параметров во времени
-3. файл с изменением интенсивности потоков модели во времени
+или записать результаты в csv файл, включая
+1. изменения численности каждой стадии
+2. изменения значений всех параметров во времени (опционально)
+3. изменения интенсивности потоков модели во времени (опционально)
 
 ```python
 from epidemmo import Standard
 
 model = Standard.get_SIR_builder().build()
 model.start(60)
-model.write_results()
+model.write_results(write_flows=True, write_factors=True)
 ```
 
 ## Получение системы LaTex уравнений 
