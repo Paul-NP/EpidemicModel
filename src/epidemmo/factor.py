@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Callable, Optional, Literal, Any, Sequence
+from typing import Callable, Optional, Any, Sequence
 from types import FunctionType
 
 import numpy as np

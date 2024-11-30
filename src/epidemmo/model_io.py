@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from typing import Callable, Literal, Union, Type, TypeAlias
 from .model import EpidemicModel
 from .builder import ModelBuilder, ModelBuilderError

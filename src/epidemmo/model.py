@@ -1,23 +1,19 @@
-from datetime import datetime
-import random
-import random
-from pickle import FALSE
+from typing import Optional, Callable
 
 import numpy as np
-from itertools import product
+
 import pandas as pd
+from itertools import product
+
 from matplotlib import pyplot as plt
 from prettytable import PrettyTable
+from scipy.stats import poisson
+from datetime import datetime
 
 from .flow import Flow
 from .stage import Stage
 from .factor import Factor
-from scipy.stats import poisson
 
-
-from typing import Optional, Callable
-
-BAD_MODEL = [False]
 
 class ModelError(Exception):
     pass
@@ -70,9 +66,16 @@ class EpidemicModel:
 
     @property
     def population_size(self) -> int:
+        """
+        :return: Размер популяции
+        """
         return self._stage_starts.sum()
 
     def set_relativity_factors(self, relativity_factors: bool):
+        """
+        :param relativity_factors: относительные ли факторы (относительные - не будут делиться на размер популяции)
+        :return:
+        """
         if not isinstance(relativity_factors, bool):
             raise ModelError('relativity_factors must be bool')
         for fl in self._flows:
@@ -121,13 +124,13 @@ class EpidemicModel:
               get_cis: bool = False, num_cis_starts: int = 100, cis_significance: float = 0.05) -> pd.DataFrame:
         """
         Запускает модель и возвращает таблицу результатов
-        :param duration: int, длительность моделирования
-        :param full_save: bool, вычислить ли все результаты (+потоки, +факторы)
-        :param stochastic: bool, запускать ли модель в стохастическом режиме
-        :param get_cis: bool, вычислить ли доверительные интервалы
-        :param num_cis_starts: int, количество стохастических запусков для вычисления доверительных интервалов
-        :param cis_significance: float, уровень значимости для доверительных интервалов
-        :return: DataFrame, таблица результатов, столбцы - стадии, строки - шаги моделирования
+        :param duration: длительность моделирования
+        :param full_save: вычислить ли все результаты (+потоки, +факторы)
+        :param stochastic: запускать ли модель в стохастическом режиме
+        :param get_cis: вычислить ли доверительные интервалы
+        :param num_cis_starts: количество стохастических запусков для вычисления доверительных интервалов
+        :param cis_significance: уровень значимости для доверительных интервалов
+        :return: таблица результатов, столбцы - стадии, строки - шаги моделирования
         """
         if not isinstance(duration, int) or duration < 1:
             raise ModelError('duration must be int > 1')
@@ -169,8 +172,8 @@ class EpidemicModel:
 
         if save_full:
             self._full_step_seq.append(self._save_additional_results)
-            self._result_flows = np.zeros((self._duration, len(self._flow_names)), dtype=np.float64)
-            self._result_factors = np.zeros((self._duration, len(self._factors_names)), dtype=np.float64)
+            self._result_flows = np.full((self._duration, len(self._flow_names)), np.nan,  dtype=np.float64)
+            self._result_factors = np.full((self._duration, len(self._factors_names)), np.nan, dtype=np.float64)
         else:
             self._result_flows = None
             self._result_factors = None
@@ -193,7 +196,6 @@ class EpidemicModel:
         self._full_step_seq.append(self._stoch_step)
 
         for i in range(count):
-            print(f'Run {i}')
             self._result = all_results[i]
             self._prepare()
             self._stoch_run()
@@ -254,7 +256,6 @@ class EpidemicModel:
     def _fast_run(self):
         for step in range(1, self._duration):
             pr = self._result[step - 1]
-            a = np.array([1,2,3])
             self._induction * self._iflow_weights
             self._flows_probabs[self._induction_mask] = 1 - ((1 - self._induction * self._iflow_weights) ** pr).prod(axis=1)
 
@@ -299,11 +300,12 @@ class EpidemicModel:
         self._result_factors[step-1] = [fa.value for fa in self._factors]
 
     @classmethod
-    def get_table(cls, table_df: pd.DataFrame) -> PrettyTable:
+    def _get_table(cls, table_df: pd.DataFrame) -> PrettyTable:
         table = PrettyTable()
         table.add_column('step', table_df.index.tolist())
         for col in table_df:
-            table.add_column(col, table_df[col].tolist())
+            col_name = f'{col[0]}_{col[1]}' if isinstance(col, tuple) else str(col)
+            table.add_column(col_name, table_df[col].tolist())
         table.float_format = f".{cls.__len_float}"
         return table
 
@@ -313,11 +315,12 @@ class EpidemicModel:
 
     def _get_factors_df(self) -> pd.DataFrame:
         factors = pd.DataFrame(self._result_factors, columns=[fa.name for fa in self._factors])
-        return factors.reindex(np.arange(self._duration))
+        return factors
 
     def _get_flows_df(self) -> pd.DataFrame:
-        flows = pd.DataFrame(self._result_flows, columns=list(self._flow_names))
-        return flows.reindex(np.arange(self._duration), fill_value=0)
+        flows = pd.DataFrame(self._result_flows, columns=self._flow_names)
+        flows.fillna(0, inplace=True)
+        return flows
 
     def _get_full_df(self) -> pd.DataFrame:
         return pd.concat([self._get_result_df(), self._get_flows_df(),
@@ -330,39 +333,57 @@ class EpidemicModel:
         return conf_df.reindex(np.arange(self._duration))
 
     @property
-    def result_df(self):
+    def result_df(self) -> pd.DataFrame:
+        """
+        :return: Таблица результатов, численность каждой стадии во времени
+        """
         return self._get_result_df()
 
     @property
-    def full_df(self):
+    def full_df(self) -> pd.DataFrame:
+        """
+        :return: Таблица результатов, численность каждой стадии во времени,
+        """
         return self._get_full_df()
 
     @property
-    def flows_df(self):
+    def flows_df(self) -> pd.DataFrame:
+        """
+        :return: Таблица потоков, интенсивность (численность) каждого потока (перехода) во времени
+        """
         return self._get_flows_df()
 
     @property
     def factors_df(self):
+        """
+        :return: Таблица факторов (параметров модели), значение каждого фактора во времени
+        """
         return self._get_factors_df()
 
     @property
     def confidence_df(self):
+        """
+        :return: Таблица доверительных интервалов, верхняя и нижняя границы для численности каждой стадии во времени
+        """
         return self._get_conf_df()
 
     def print_result_table(self) -> None:
-        print(self.get_table(self._get_result_df()))
+        print(self._get_table(self._get_result_df()))
 
     def print_factors_table(self) -> None:
-        print(self.get_table(self._get_factors_df()))
+        print(self._get_table(self._get_factors_df()))
 
     def print_flows_table(self) -> None:
-        print(self.get_table(self._get_flows_df()))
+        print(self._get_table(self._get_flows_df()))
 
-    def print_full_result(self) -> None:
-        print(self.get_table(self._get_full_df()))
+    def print_full_table(self) -> None:
+        print(self._get_table(self._get_full_df()))
 
     @property
     def name(self) -> str:
+        """
+        :return: Название модели
+        """
         return self._name
 
     def _write_table(self, filename: str, table: pd.DataFrame, floating_point='.', delimiter=',') -> None:
@@ -371,7 +392,14 @@ class EpidemicModel:
 
     def write_results(self, floating_point='.', delimiter=',', path: str = '',
                       write_flows: bool = False, write_factors: bool = False) -> None:
-
+        """
+        Сохраняет результаты модели в csv-файл
+        :param floating_point: десятичная точка
+        :param delimiter: разделитель в таблице
+        :param path: путь для сохранения
+        :param write_flows: сохранять ли столбцы с результатами по потокам
+        :param write_factors: сохранять ли столбцы с результатами по факторам
+        """
         if path and path[-1] != '\\':
             path = path + '\\'
 
@@ -496,9 +524,6 @@ class EpidemicModel:
 
     @staticmethod
     def _correct_p(probs: np.ndarray) -> np.ndarray:
-        if BAD_MODEL[0]:
-            return probs
-        print('sum of original probs', probs.sum())
         # return probs
         # матрица случившихся событий
         happened_matrix = np.array(list(product([0, 1], repeat=len(probs))), dtype=np.bool)

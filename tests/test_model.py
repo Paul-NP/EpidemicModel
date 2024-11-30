@@ -1,13 +1,18 @@
+from pydoc import plain
+
+import matplotlib.pyplot as plt
+
 from epidemmo.model import EpidemicModel
 from epidemmo.builder import ModelBuilder
 import pytest
-
+import numpy as np
 from epidemmo.standard import Standard
 
 
 @pytest.fixture()
 def seirds_latex_full_relative() -> str:
     return '\\begin{equation}\\label{eq:SEIRDS_full}\n    \\begin{cases}\n        \\frac{dS}{dt} = R \\cdot \\sigma - S \\cdot (1 - (1 - \\frac{\\beta}{N})^{I})\\\\\n        \\frac{dE}{dt} = S \\cdot (1 - (1 - \\frac{\\beta}{N})^{I}) - E \\cdot \\alpha\\\\\n        \\frac{dI}{dt} = E \\cdot \\alpha - I \\cdot \\gamma\\\\\n        \\frac{dR}{dt} = I \\cdot \\gamma \\cdot (1-\\delta) - R \\cdot \\sigma\\\\\n        \\frac{dD}{dt} = I \\cdot \\gamma \\cdot \\delta\\\\\n    \\end{cases}\n\\end{equation}\n'
+
 
 @pytest.fixture()
 def sir_result10() -> list[float]:
@@ -126,3 +131,15 @@ def test_dynamic_sir(sir_result10):
     model.set_factors(beta=lambda x: 0.4, gamma=[0.1]*20)
     result = model.start(10).to_numpy().round(2).T.ravel().tolist()
     assert result == pytest.approx(sir_result10, abs=0.01)
+
+
+def test_confidence_interval():
+    model = Standard.get_SIR_builder().build()
+    model.set_start_stages(S=970000, I=24000, R=6000)
+    model.start(60, get_cis=True)
+
+    low = model.confidence_df[[('S', 'lower'), ('I', 'lower'), ('R', 'lower')]].to_numpy()
+    up = model.confidence_df[[('S', 'upper'), ('I', 'upper'), ('R', 'upper')]].to_numpy()
+    res = model.result_df[['S', 'I', 'R']].to_numpy()
+    assert np.logical_and(res >= low, res <= up).all()
+

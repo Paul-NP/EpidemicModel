@@ -1,12 +1,9 @@
 from __future__ import annotations
-from typing import Callable, TypeAlias, Optional, Union, Any
+from typing import Callable, TypeAlias, Union
 from numpy.typing import NDArray
 
 from .stage import Stage
 from .factor import Factor
-
-from scipy.stats import poisson  # type: ignore
-from math import prod
 
 
 factorValue: TypeAlias = Union[int, float, Callable[[int], float]]
