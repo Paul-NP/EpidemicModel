@@ -482,7 +482,7 @@ class EpidemicModel:
             fl.send_latex_terms(simplified)
 
         tab = '    '
-        system_of_equations = f'\\begin{{equation}}\\label{{eq:{self._name}_{'classic' if simplified else 'full'}}}\n'
+        system_of_equations = f"\\begin{{equation}}\\label{{eq:{self._name}_{'classic' if simplified else 'full'}}}\n"
         system_of_equations += f'{tab}\\begin{{cases}}\n'
 
         for st in self._stages:
