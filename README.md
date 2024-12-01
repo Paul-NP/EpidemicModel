@@ -31,7 +31,7 @@ plt.show()
 
 ### Результаты моделирования
 
-![sir example](https://raw.githubusercontent.com/Paul-NP/EpidemicModel/master/documentation/images/sir_example.png)
+![sir example](https://raw.githubusercontent.com/Paul-NP/EpidemicModel/refs/heads/master/documentation/images/sir_example.png)
 
 ## Использование стандартных моделей
 
@@ -120,4 +120,4 @@ print(latex_str_simplified)
 ``` 
 Для компиляции необходимо подключить пакет `amsmath` 
 Результат компиляции LaTex выглядит следующим образом:
-![equation example](https://raw.githubusercontent.com/Paul-NP/EpidemicModel/master/documentation/images/equations_example.png)
+![equation example](https://raw.githubusercontent.com/Paul-NP/EpidemicModel/refs/heads/master/documentation/images/equations_example.png)
