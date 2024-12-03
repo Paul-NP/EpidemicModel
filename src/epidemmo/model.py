@@ -44,7 +44,7 @@ class EpidemicModel:
         self._flows_weights: np.ndarray = np.zeros(len(flows), dtype=np.float64)
         self._targets: np.ndarray = np.zeros((len(flows), len(stages)), dtype=np.float64)
         self._induction_weights: np.ndarray = np.zeros((len(flows), len(stages)), dtype=np.float64)
-        self._outputs: np.ndarray = np.zeros((len(flows), len(stages)), dtype=np.bool)
+        self._outputs: np.ndarray = np.zeros((len(flows), len(stages)), dtype=np.bool_)
 
         # связываем факторы, используемые в потоках, с матрицами
         self._connect_matrix(flows)
@@ -526,7 +526,7 @@ class EpidemicModel:
     def _correct_p(probs: np.ndarray) -> np.ndarray:
         # return probs
         # матрица случившихся событий
-        happened_matrix = np.array(list(product([0, 1], repeat=len(probs))), dtype=np.bool)
+        happened_matrix = np.array(list(product([0, 1], repeat=len(probs))), dtype=np.bool_)
 
         # вектор вероятностей каждого сценария
         # те что свершились с исходной вероятностью, а не свершились - (1 - вероятность)
