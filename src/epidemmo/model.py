@@ -139,14 +139,16 @@ class EpidemicModel:
         if not isinstance(stochastic, bool):
             raise ModelError('stochastic must be bool')
 
+        self._result_flows = None
+        self._result_factors = None
+        self._confidence = None
         self._duration = duration
 
         if get_cis:
             self._get_confidence_intervals(num_cis_starts, cis_significance)
 
         self._start(full_save, stochastic)
-        df = self._get_result_df()
-        return df
+        return self._get_result_df()
 
     def _start(self, save_full: bool, stochastic: bool):
         self._result = np.zeros((self._duration, len(self._stage_starts)), dtype=np.float64)
