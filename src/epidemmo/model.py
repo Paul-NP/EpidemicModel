@@ -1,3 +1,4 @@
+from turtledemo.penrose import start
 from typing import Optional, Callable
 
 import numpy as np
@@ -54,7 +55,12 @@ class EpidemicModel:
         self._result[0] = self._stage_starts
         self._result_flows: Optional[np.ndarray] = None
         self._result_factors: Optional[np.ndarray] = None
+
         self._confidence: Optional[np.ndarray] = None
+        self._confidence_peaks: Optional[np.ndarray] = None
+
+        self._confidence_flows: Optional[np.ndarray] = None
+        self._confidence_flow_peaks: Optional[np.ndarray] = None
 
         self._flows_probabs: np.ndarray = np.zeros(len(flows), dtype=np.float64)
         self._flows_values: np.ndarray = np.zeros(len(flows), dtype=np.float64)
@@ -86,7 +92,7 @@ class EpidemicModel:
         for fa in self._factors:
             fa.update(0)
 
-    def _update_dynamic_factors(self, step: int):
+    def _update_dynamic_factors(self, step: int, *args):
         for fa in self._dynamic_factors:
             fa.update(step-1)
 
@@ -142,10 +148,11 @@ class EpidemicModel:
         self._result_flows = None
         self._result_factors = None
         self._confidence = None
+        self._confidence_flows = None
         self._duration = duration
 
         if get_cis:
-            self._get_confidence_intervals(num_cis_starts, cis_significance)
+            self._get_confidence_intervals(num_cis_starts, full_save, cis_significance)
 
         self._start(full_save, stochastic)
         return self._get_result_df()
@@ -161,6 +168,7 @@ class EpidemicModel:
             return
 
         self._full_step_seq: list[Callable] = []
+
         if self._dynamic_factors:
             self._full_step_seq.append(self._update_dynamic_factors)
             if not self._relativity_factors:
@@ -172,9 +180,11 @@ class EpidemicModel:
         else:
             self._full_step_seq.append(self._determ_step)
 
+        self._full_step_seq.append(self._result_shift)
+
         if save_full:
             self._full_step_seq.append(self._save_additional_results)
-            self._result_flows = np.full((self._duration, len(self._flow_names)), np.nan,  dtype=np.float64)
+            self._result_flows = np.zeros((self._duration, len(self._flow_names)),dtype=np.float64)
             self._result_factors = np.full((self._duration, len(self._factors_names)), np.nan, dtype=np.float64)
         else:
             self._result_flows = None
@@ -185,9 +195,17 @@ class EpidemicModel:
         else:
             self._determ_run()
 
-    def _several_stoch_starts(self, count: int):
+        if save_full:
+            self._result_flows = self._result_flows[1:]
+            self._result_factors = self._result_factors[1:]
+
+
+    def _several_stoch_starts(self, count: int, flows_cis: bool = False) -> tuple[np.ndarray, np.ndarray]:
         all_results = np.zeros((count, self._duration, len(self._stage_starts)), dtype=np.float64)
         all_results[:, 0, :] = self._stage_starts
+        flows_results = None
+        if flows_cis:
+            flows_results = np.zeros((count, self._duration, len(self._flow_names)), dtype=np.float64)
 
         self._full_step_seq: list[Callable] = []
         if self._dynamic_factors:
@@ -195,24 +213,110 @@ class EpidemicModel:
             if not self._relativity_factors:
                 self._full_step_seq.append(self._correct_not_rel_factors)
             self._full_step_seq.append(self._prepare_factors_matrix)
+
         self._full_step_seq.append(self._stoch_step)
+        self._full_step_seq.append(self._result_shift)
+
+        if flows_cis:
+            self._full_step_seq.append(self._save_flows_results)
 
         for i in range(count):
             self._result = all_results[i]
+            if flows_cis:
+                self._result_flows = flows_results[i]
             self._prepare()
             self._stoch_run()
 
-        return all_results
+        if flows_cis:
+            flows_results = flows_results[:, 1:, :]
 
-    def _get_confidence_intervals(self, num_starts: int, alpha_cis: float = 0.05):
+        return all_results, flows_results
+
+    def get_stoch_variants(self, duration: int, num_starts: int) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Результаты по стадиям и по потокам для множества стохастических запусков в виде трёхмерных матриц
+        :param duration: продолжительность моделирования
+        :param num_starts: количество стохастических запусков
+        :return: матрица с результатами по стадиям, матрица с результатами по потокам
+        """
+        if not isinstance(duration, int) or duration < 1:
+            raise ModelError('duration must be int > 1')
+        if not isinstance(num_starts, int) or num_starts < 1:
+            raise ModelError('Number of starts for calculating confidence intervals must be int > 1')
+
+        self._duration = duration
+        return self._several_stoch_starts(num_starts, True)
+
+    def _get_confidence_intervals(self, num_starts: int, flows_cis: bool, alpha_cis: float = 0.05):
         if not isinstance(num_starts, int) or num_starts < 1:
             raise ModelError('Number of starts for calculating confidence intervals must be int > 1')
         if not isinstance(alpha_cis, float) or alpha_cis < 0 or alpha_cis > 1:
             raise ModelError(f'Alpha for calculating confidence intervals must be float in range [0, 1], but got {alpha_cis}')
 
-        results = self._several_stoch_starts(num_starts) # для получения набора стохастических результатов
-        self._start(False, False) # для получения теоретического результата в self._result
-        self._confidence = self._calc_confidence_intervals(results, self._result, alpha_cis)
+        results, flows_results = self._several_stoch_starts(num_starts, flows_cis)
+        self._start(flows_cis, False) # для получения теоретического результата в self._result
+        aligned_results = self._align_stoch_results_by_peaks(results, self._result)
+        # aligned_results = results
+        self._confidence = self._calc_confidence_intervals(aligned_results, self._result, alpha_cis)
+        self._confidence_peaks = self._calc_confidence_peak_interval(results, self._result, alpha_cis)
+
+        if flows_cis:
+            aligned_flows = self._align_stoch_results_by_peaks(flows_results, self._result_flows)
+            # aligned_flows = flows_results
+            self._confidence_flows = self._calc_confidence_intervals(aligned_flows, self._result_flows, alpha_cis)
+            self._confidence_flow_peaks = self._calc_confidence_peak_interval(flows_results, self._result_flows, alpha_cis)
+
+    @staticmethod
+    def _align_stoch_results_by_peaks(stoch_results: np.array, teor_result: np.array):
+        # надо найти максимумы в каждом стохастическом результате и выровнять их по максимуму теоретического результата
+        num_runs, duration, num_lines = stoch_results.shape
+
+        stoch_peaks = stoch_results.argmax(axis=1) # shape - (num_runs, num_stages)
+        teor_peaks = teor_result.argmax(axis=0) # shape - (num_stages,)
+
+        num_runs, num_lines = stoch_peaks.shape
+        aligned_stoch_results = np.full((num_runs, duration, num_lines), np.nan, dtype=np.float64)
+        for st_i in range(num_lines):
+            for run_i in range(num_runs):
+                shift = teor_peaks[st_i] - stoch_peaks[run_i, st_i]
+                start = shift if shift > 0 else 0
+                end = duration + shift if shift < 0 else duration
+                rolled = np.roll(stoch_results[run_i, :, st_i], shift, axis=0)
+                aligned_stoch_results[run_i, start:end, st_i] = rolled[start:end]
+
+        return aligned_stoch_results
+
+    @staticmethod
+    def _calc_confidence_peak_interval(stoch_results: np.array, teor_result: np.array, alpha: float):
+        # надо найти максимумы в каждом стохастическом результате и посчитать доверительный интервал
+        # для максимумов относительно максимума теоретического результата
+
+        down_limit = alpha * 100
+        up_limit = (1 - alpha) * 100
+
+        # stoch_results shape - (num_runs, duration, num_stages)
+        # teor_result shape - (duration, num_stages)
+
+        stoch_peaks = stoch_results.argmax(axis=1) # shape - (num_runs, num_stages)
+        teor_peaks = teor_result.argmax(axis=0) # shape - (num_stages,)
+
+        num_runs, num_stages = stoch_peaks.shape
+        confidence = np.zeros((2, num_stages), dtype=np.float64)
+        for st_i in range(num_stages):
+            low_results = stoch_peaks[stoch_peaks[:, st_i] < teor_peaks[st_i], st_i]
+            if len(low_results):
+                conf_low = np.percentile(low_results, [down_limit], axis=0)[0]
+            else:
+                conf_low = teor_peaks[st_i]
+
+            up_results = stoch_peaks[stoch_peaks[:, st_i] > teor_peaks[st_i], st_i]
+            if len(up_results):
+                conf_up = np.percentile(up_results, [up_limit], axis=0)[0]
+            else:
+                conf_up = teor_peaks[st_i]
+
+            confidence[:, st_i] = [conf_low, conf_up]
+        return confidence
 
     @staticmethod
     def _calc_confidence_intervals(stoch_results: np.array, mid_result: np.array, alpha_cis: float = 0.05):
@@ -238,22 +342,23 @@ class EpidemicModel:
         return confidence
 
     def _determ_run(self):
+        self._result_shift(0, 1)
         for step in range(1, self._duration):
-            self._result[step] = self._result[step - 1]
             for step_func in self._full_step_seq:
-                step_func(step)
+                step_func(step, 1)
+            # self._result_shift(step, 1)
 
     def _stoch_run(self):
-        step = 0
-        shift = poisson.rvs(mu=1)
-        self._result[step: step + shift + 1] = self._result[step]
-        step = step + shift
+        self._result_shift(0, 1)
+        step = 1
         while step < self._duration:
-            for step_func in self._full_step_seq:
-                step_func(step)
             shift = poisson.rvs(mu=1)
-            self._result[step: step + shift + 1] = self._result[step]
-            step = step + shift
+            for step_func in self._full_step_seq:
+                step_func(step, shift)
+            step += shift
+
+    def _result_shift(self, step: int, shift):
+        self._result[step: step + shift + 1] = self._result[step]
 
     def _fast_run(self):
         for step in range(1, self._duration):
@@ -268,7 +373,7 @@ class EpidemicModel:
             changes = self._flows_values @ self._targets - self._flows_values @ self._outputs
             self._result[step] = pr + changes
 
-    def _determ_step(self, step: int):
+    def _determ_step(self, step: int, *args):
         self._flows_probabs[self._induction_mask] = 1 - ((1 - self._induction * self._iflow_weights) **
                                                          self._result[step]).prod(axis=1)
 
@@ -279,7 +384,7 @@ class EpidemicModel:
         changes = self._flows_values @ self._targets - self._flows_values @ self._outputs
         self._result[step] += changes
 
-    def _stoch_step(self, step: int):
+    def _stoch_step(self, step: int, *args):
         self._flows_probabs[self._induction_mask] = 1 - ((1 - self._induction * self._iflow_weights) **
                                                          self._result[step]).prod(axis=1)
 
@@ -297,9 +402,12 @@ class EpidemicModel:
         changes = self._flows_values @ self._targets - self._flows_values @ self._outputs
         self._result[step] += changes
 
-    def _save_additional_results(self, step: int):
-        self._result_flows[step-1] = self._flows_values
-        self._result_factors[step-1] = [fa.value for fa in self._factors]
+    def _save_additional_results(self, step: int, *args):
+        self._result_flows[step] += self._flows_values
+        self._result_factors[step] = [fa.value for fa in self._factors]
+
+    def _save_flows_results(self, step: int, *args):
+        self._result_flows[step] += self._flows_values
 
     @classmethod
     def _get_table(cls, table_df: pd.DataFrame) -> PrettyTable:
@@ -316,10 +424,15 @@ class EpidemicModel:
         return result.reindex(np.arange(self._duration), method='ffill')
 
     def _get_factors_df(self) -> pd.DataFrame:
-        factors = pd.DataFrame(self._result_factors, columns=[fa.name for fa in self._factors])
-        return factors
+        if self._result_factors is None:
+            print('Warning: результаты по факторам должны быть сохранены во время моделирования')
+            return pd.DataFrame()
+        return pd.DataFrame(self._result_factors, columns=[fa.name for fa in self._factors])
 
     def _get_flows_df(self) -> pd.DataFrame:
+        if self._result_flows is None:
+            print('Warning: результаты по потокам должны быть сохранены во время моделирования')
+            return pd.DataFrame()
         flows = pd.DataFrame(self._result_flows, columns=self._flow_names)
         flows.fillna(0, inplace=True)
         return flows
@@ -329,10 +442,36 @@ class EpidemicModel:
                           self._get_factors_df(), self._get_conf_df()], axis=1)
 
     def _get_conf_df(self):
+        if self._confidence is None:
+            print('Warning: результаты по доверительным интервалам стадий должны быть сохранены во время моделирования')
+            return pd.DataFrame()
         col_names = [(st_name, limit) for st_name in self._stage_names for limit in ['lower', 'upper']]
         index = pd.MultiIndex.from_tuples(col_names, names=['stage', 'limit'])
         conf_df = pd.DataFrame(self._confidence, columns=index)
         return conf_df.reindex(np.arange(self._duration))
+
+    def _get_conf_flows_df(self):
+        if self._confidence_flows is None:
+            print('Warning: результаты по доверительным интервалам потоков должны быть сохранены во время моделирования')
+            return pd.DataFrame()
+        col_names = [(fl_name, limit) for fl_name in self._flow_names for limit in ['lower', 'upper']]
+        index = pd.MultiIndex.from_tuples(col_names, names=['flow', 'limit'])
+        conf_df = pd.DataFrame(self._confidence_flows, columns=index)
+        return conf_df.reindex(np.arange(self._duration))
+
+    def _get_conf_peaks_df(self):
+        if self._confidence_peaks is None:
+            print('Warning: результаты по доверительным интервалам стадий должны быть сохранены во время моделирования')
+            return pd.DataFrame()
+        conf_df = pd.DataFrame(self._confidence_peaks, columns=self._stage_names, index=['lower', 'upper'])
+        return conf_df
+
+    def _get_conf_flows_peaks_df(self):
+        if self._confidence_flow_peaks is None:
+            print('Warning: результаты по доверительным интервалам потоков должны быть сохранены во время моделирования')
+            return pd.DataFrame()
+        conf_df = pd.DataFrame(self._confidence_flow_peaks, columns=self._flow_names, index=['lower', 'upper'])
+        return conf_df
 
     @property
     def result_df(self) -> pd.DataFrame:
@@ -344,7 +483,7 @@ class EpidemicModel:
     @property
     def full_df(self) -> pd.DataFrame:
         """
-        :return: Таблица результатов, численность каждой стадии во времени,
+        :return: Таблица результатов, численность каждой стадии, потока и фактора во времени
         """
         return self._get_full_df()
 
@@ -368,6 +507,13 @@ class EpidemicModel:
         :return: Таблица доверительных интервалов, верхняя и нижняя границы для численности каждой стадии во времени
         """
         return self._get_conf_df()
+
+    @property
+    def confidence_flows_df(self):
+        """
+        :return: Таблица доверительных интервалов, верхняя и нижняя границы для интенсивности каждого потока во времени
+        """
+        return self._get_conf_flows_df()
 
     def print_result_table(self) -> None:
         print(self._get_table(self._get_result_df()))
@@ -498,31 +644,107 @@ class EpidemicModel:
 
         return system_of_equations
 
-    def plot(self, ax: plt.Axes = None) -> plt.Axes:
+    def _prepare_plot_args(self, ax, draw_cis, draw_peaks) -> plt.Axes:
         if ax is None:
             fig, ax = plt.subplots(1, 1)
-        self._plot(ax)
+        elif not isinstance(ax, plt.Axes):
+            raise ModelError('ax must be plt.Axes')
+        if not isinstance(draw_cis, bool):
+            raise ModelError('draw_cis must be bool')
+        if not isinstance(draw_peaks, bool):
+            raise ModelError('draw_peaks must be bool')
         return ax
 
-    def _plot(self, ax: plt.Axes) -> None:
-        result = self._get_result_df()
+    def plot(self, *args, ax: Optional[plt.Axes] = None,
+             draw_cis: bool = True, draw_peaks: bool = True) -> plt.Axes:
+        """
+        Построение графика изменений численности стадий.
+        :param args: Названия стадий, которые будут включены в график.
+        :param ax: Axes на котором будет построен график.
+        :param draw_cis: Рисовать ли доверительные интервалы.
+        :param draw_peaks: Рисовать ли доверительные интервалы пиков.
+        :return: Axes на котором будет построен график.
+        """
+        ax = self._prepare_plot_args(ax, draw_cis, draw_peaks)
+
+        stage_names = [s for s in args if s in self._stage_names]
+        if not stage_names:
+            stage_names = list(self._stage_names)
+
+        if draw_cis:
+            conf_df = self._get_conf_df()
+            conf_df = conf_df[stage_names] if len(conf_df) > 0 else None
+        else:
+            conf_df = None
+
+        if draw_peaks:
+            peaks_df = self._get_conf_peaks_df()
+            peaks_df = peaks_df[stage_names] if len(peaks_df) > 0 else None
+        else:
+            peaks_df = None
+
+        return self._plot(ax=ax, df=self._get_result_df()[stage_names], conf_df=conf_df, peaks_df=peaks_df,
+                          ylabel='количество индивидов', name=self._name)
+
+    def plot_flows(self, *args, ax: plt.Axes = None,
+                   draw_cis: bool = True, draw_peaks: bool = True) -> plt.Axes:
+        """
+        Построение графика изменения интенсивности потоков.
+        :param args: Названия потоков, которые будут включены в график.
+        :param ax: Axes на котором будет построен график.
+        :param draw_cis: Рисовать ли доверительные интервалы.
+        :param draw_peaks: Рисовать ли доверительные интервалы пиков.
+        :return: Axes на котором будет построен график.
+        """
+        ax = self._prepare_plot_args(ax, draw_cis, draw_peaks)
+
+        flow_names = [f for f in args if f in self._flow_names]
+        if not flow_names:
+            flow_names = list(self._flow_names)
+
+        if draw_cis:
+            conf_df = self._get_conf_flows_df()
+            conf_df = conf_df[flow_names] if len(conf_df) > 0 else None
+        else:
+            conf_df = None
+
+        if draw_peaks:
+            peaks_df = self._get_conf_flows_peaks_df()
+            peaks_df = peaks_df[flow_names] if len(peaks_df) > 0 else None
+        else:
+            peaks_df = None
+
+        return self._plot(ax=ax, df=self._get_flows_df()[flow_names], conf_df=conf_df, peaks_df=peaks_df,
+                          ylabel='интенсивность потока', name=f'потоки модели {self._name}')
+
+    @staticmethod
+    def _plot(*, ax: Optional[plt.Axes], df: pd.DataFrame, conf_df: Optional[pd.DataFrame],
+              peaks_df: Optional[pd.DataFrame], ylabel: str, name: str) -> plt.Axes:
         colors = []
 
-        for sname in self._stage_names:
-            p = ax.plot(result[sname], label=sname)
+        for sname in df.columns:
+            p = ax.plot(df[sname], label=sname)
             colors.append(p[0].get_color())
-
-        if self._confidence is not None:
-            conf = self._get_conf_df()
-            for stage, color in zip(self._stage_names, colors):
-                ax.fill_between(conf.index, conf[(stage, 'lower')], conf[(stage, 'upper')], color=color, alpha=0.2,
+        if conf_df is not None:
+            for stage, color in zip(df.columns, colors):
+                ax.fill_between(conf_df.index, conf_df[(stage, 'lower')], conf_df[(stage, 'upper')], color=color, alpha=0.2,
                                 label=f'доверительный интервал для {stage}')
 
-        ax.set_title(self._name)
+        if peaks_df is not None:
+            for stage, color in zip(peaks_df.columns, colors):
+                if peaks_df[stage]['lower'] != peaks_df[stage]['upper']:
+                    x = peaks_df[stage]
+                    ax.vlines(x, 0, df[stage].max(), color=color, linestyle='--',
+                              label=f'доверительный интервал пика для {stage}')
+
+        ax.set_title(name)
         ax.set_xlabel('время')
-        ax.set_ylabel('количество индивидов')
+        ax.set_ylabel(ylabel)
         ax.grid()
         ax.legend()
+
+        return ax
+
 
     @staticmethod
     def _correct_p(probs: np.ndarray) -> np.ndarray:

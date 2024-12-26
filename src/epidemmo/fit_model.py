@@ -22,6 +22,8 @@ class ModelFitter:
         self._changeable_factors: dict[str, tuple[float, float]] = {}
         self._real_flows_df: Optional[pd.DataFrame] = None
 
+        self._mse_history: list[float] = []
+
     @staticmethod
     def _check_bounds_dict(bounds_dict: dict[str, tuple[float, float]], names: list[str]):
         for name, bounds in bounds_dict.items():
@@ -63,7 +65,7 @@ class ModelFitter:
         if not self._changeable_stages and not self._changeable_factors:
             raise ModelFitterError('No stages or factors are changeable')
 
-        not_existing_flows = set(real_flows_df.columns) - set(self._model.flows_df.columns)
+        not_existing_flows = set(real_flows_df.columns) - set(self._model.flow_names)
         if not_existing_flows:
             raise ModelFitterError(f'Flows {not_existing_flows} not found in the model')
 
@@ -80,7 +82,10 @@ class ModelFitter:
             param_start.append(fa['value'])
             bounds.append(self._changeable_factors[fa['name']])
         param_start = np.array(param_start, dtype=np.float64)
-        return opt.minimize(self._get_mse, param_start, method='Nelder-Mead', bounds=bounds)
+        self._mse_history = []
+        result = opt.minimize(self._get_mse, param_start, method='Nelder-Mead', bounds=bounds)
+        self._get_mse(result.x)
+        return result
 
     def _get_mse(self, parameters: npt.NDArray[np.float64]):
         parameters = np.abs(parameters)
@@ -96,8 +101,9 @@ class ModelFitter:
         # penalty = (self._model.population_size - self._population_size) ** 2
         # result_mse = mse(self._model.flows_df[self._real_flows_df.columns][:-1], self._real_flows_df) + penalty
 
-        result_mse = mse(self._model.flows_df[self._real_flows_df.columns][:-1], self._real_flows_df)
+        result_mse = mse(self._model.flows_df[self._real_flows_df.columns], self._real_flows_df)
 
+        self._mse_history.append(result_mse)
         return result_mse
 
 

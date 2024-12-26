@@ -52,6 +52,17 @@ def test_sir(sir_result10):
     assert result== pytest.approx(sir_result10, abs=0.01)
 
 
+def test_sir_by_flows():
+    sir = Standard.get_SIR_builder().build()
+    sir.start(50, full_save=True)
+    result_by_flowws = np.zeros((50, 3), dtype=np.float64)
+    result_by_flowws[0] = sir.result_df.iloc[0]
+    for i in range(1, 50):
+        si, ir = sir.flows_df.iloc[i-1]
+        result_by_flowws[i] = result_by_flowws[i-1] + np.array([-si, si - ir, ir])
+
+    assert (result_by_flowws == sir.result_df.to_numpy()).all()
+
 def test_seir(seir_result10):
     builder = ModelBuilder()
     builder.add_stage('S', 99).add_stage('E', 0).add_stage('I', 1).add_stage('R')
