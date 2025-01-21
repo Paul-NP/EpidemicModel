@@ -265,40 +265,61 @@ class EpidemicModel:
             # aligned_flows = flows_results
             self._confidence_flows = self._calc_confidence_intervals(aligned_flows, self._result_flows, alpha_cis)
             self._confidence_flow_peaks = self._calc_confidence_peak_interval(flows_results, self._result_flows, alpha_cis)
-
+            
     @staticmethod
-    def _align_stoch_results_by_peaks(stoch_results: np.array, teor_result: np.array):
+    def _calc_peaks(stoch_results: np.array, teor_result: np.array) -> tuple[np.array, np.array]:
+        num_runs, duration, num_lines = stoch_results.shape
+        
+        increasing = teor_result[0, :] <= teor_result[1, :]
+
+        stoch_peaks = np.zeros((num_runs, num_lines), np.int64)
+        teor_peaks = np.zeros(num_lines, np.int64)
+
+        stoch_peaks[:, increasing] = stoch_results[:, :, increasing].argmax(axis=1)
+        stoch_peaks[:, ~increasing] = stoch_results[:, :, ~increasing].argmax(axis=1)
+        
+        teor_peaks[increasing] = teor_result[:, increasing].argmax(axis=0)
+        teor_peaks[~increasing] = teor_result[:, ~increasing].argmax(axis=0)
+        
+        return stoch_peaks, teor_peaks
+    
+    def _calc_shifts(self, stoch_results: np.array, teor_result: np.array) -> tuple[np.array, np.array]:
+        diffs_sign = np.sign(np.diff(teor_result, axis=0))
+        with_peaks = np.any((diffs_sign > 0, axis=0) & np.any(diffs_sign < 0, axis=1))
+        if not np.any(with_peaks):
+            with_peaks[:] = True
+        num_runs, duration, num_lines = stoch_results.shape
+        stoch_peaks, teor_peaks = self._calc_peaks(stoch_results, teor_result)
+        
+                 
+    def _align_stoch_results_by_peaks(self, stoch_results: np.array, teor_result: np.array):
         # надо найти максимумы в каждом стохастическом результате и выровнять их по максимуму теоретического результата
         num_runs, duration, num_lines = stoch_results.shape
+        stoch_peaks, teor_peaks = self._calc_peaks(stoch_results, teor_result)
 
-        stoch_peaks = stoch_results.argmax(axis=1) # shape - (num_runs, num_stages)
-        teor_peaks = teor_result.argmax(axis=0) # shape - (num_stages,)
-
-        num_runs, num_lines = stoch_peaks.shape
         aligned_stoch_results = np.full((num_runs, duration, num_lines), np.nan, dtype=np.float64)
         for st_i in range(num_lines):
             for run_i in range(num_runs):
                 shift = teor_peaks[st_i] - stoch_peaks[run_i, st_i]
                 start = shift if shift > 0 else 0
                 end = duration + shift if shift < 0 else duration
+                #print(f'{shift=}, {run_i=}, {st_i=}\n{stoch_results[run_i, :, st_i]=}')
                 rolled = np.roll(stoch_results[run_i, :, st_i], shift, axis=0)
                 aligned_stoch_results[run_i, start:end, st_i] = rolled[start:end]
 
         return aligned_stoch_results
 
-    @staticmethod
-    def _calc_confidence_peak_interval(stoch_results: np.array, teor_result: np.array, alpha: float):
+    def _calc_confidence_peak_interval(self, stoch_results: np.array, teor_result: np.array, alpha: float):
         # надо найти максимумы в каждом стохастическом результате и посчитать доверительный интервал
         # для максимумов относительно максимума теоретического результата
-
+        
         down_limit = alpha * 100
         up_limit = (1 - alpha) * 100
 
         # stoch_results shape - (num_runs, duration, num_stages)
         # teor_result shape - (duration, num_stages)
 
-        stoch_peaks = stoch_results.argmax(axis=1) # shape - (num_runs, num_stages)
-        teor_peaks = teor_result.argmax(axis=0) # shape - (num_stages,)
+        stoch_peaks, teor_peaks = self._calc_peaks(stoch_results, teor_result)
 
         num_runs, num_stages = stoch_peaks.shape
         confidence = np.zeros((2, num_stages), dtype=np.float64)
