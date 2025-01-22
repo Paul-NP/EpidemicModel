@@ -22,7 +22,7 @@ builder.add_factor('beta', 0.4).add_factor('gamma', 0.1)
 builder.add_flow('S', 'I', 'beta', 'I').add_flow('I', 'R', 'gamma')
 
 model = builder.build()
-model.print_result_table()
+model.start(70)
 
 model.plot()
 
