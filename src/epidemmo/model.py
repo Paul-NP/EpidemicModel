@@ -1,4 +1,3 @@
-from turtledemo.penrose import start
 from typing import Optional, Callable
 
 import numpy as np
@@ -56,11 +55,12 @@ class EpidemicModel:
         self._result_flows: Optional[np.ndarray] = None
         self._result_factors: Optional[np.ndarray] = None
 
+        self._peaks: Optional[np.ndarray] = None
+
         self._confidence: Optional[np.ndarray] = None
         self._confidence_peaks: Optional[np.ndarray] = None
 
         self._confidence_flows: Optional[np.ndarray] = None
-        self._confidence_flow_peaks: Optional[np.ndarray] = None
 
         self._flows_probabs: np.ndarray = np.zeros(len(flows), dtype=np.float64)
         self._flows_values: np.ndarray = np.zeros(len(flows), dtype=np.float64)
@@ -127,7 +127,8 @@ class EpidemicModel:
         self._prepare_factors_matrix()
 
     def start(self, duration: int, *, full_save: bool = False, stochastic: bool = False,
-              get_cis: bool = False, num_cis_starts: int = 100, cis_significance: float = 0.05) -> pd.DataFrame:
+              get_cis: bool = False, num_cis_starts: int = 100, cis_significance: float = 0.05,
+              align_results_by_peaks: bool = True) -> pd.DataFrame:
         """
         Запускает модель и возвращает таблицу результатов
         :param duration: длительность моделирования
@@ -136,6 +137,7 @@ class EpidemicModel:
         :param get_cis: вычислить ли доверительные интервалы
         :param num_cis_starts: количество стохастических запусков для вычисления доверительных интервалов
         :param cis_significance: уровень значимости для доверительных интервалов
+        :param align_results_by_peaks: выравнивать ли результаты стохастических запуском по моменту пика при вычислении доверительных интервалов
         :return: таблица результатов, столбцы - стадии, строки - шаги моделирования
         """
         if not isinstance(duration, int) or duration < 1:
@@ -149,10 +151,12 @@ class EpidemicModel:
         self._result_factors = None
         self._confidence = None
         self._confidence_flows = None
+        self._peaks = None
+        self._confidence_peaks = None
         self._duration = duration
 
         if get_cis:
-            self._get_confidence_intervals(num_cis_starts, full_save, cis_significance)
+            self._get_confidence_intervals(num_cis_starts, full_save, cis_significance, align_results_by_peaks)
 
         self._start(full_save, stochastic)
         return self._get_result_df()
@@ -165,6 +169,7 @@ class EpidemicModel:
 
         if not self._dynamic_factors and not save_full and not stochastic:
             self._fast_run()
+            self._peaks = self._get_teor_peaks(self._result)
             return
 
         self._full_step_seq: list[Callable] = []
@@ -194,11 +199,11 @@ class EpidemicModel:
             self._stoch_run()
         else:
             self._determ_run()
+            self._peaks = self._get_teor_peaks(self._result)
 
         if save_full:
             self._result_flows = self._result_flows[1:]
             self._result_factors = self._result_factors[1:]
-
 
     def _several_stoch_starts(self, count: int, flows_cis: bool = False) -> tuple[np.ndarray, np.ndarray]:
         all_results = np.zeros((count, self._duration, len(self._stage_starts)), dtype=np.float64)
@@ -221,12 +226,14 @@ class EpidemicModel:
             self._full_step_seq.append(self._save_flows_results)
 
         for i in range(count):
+            if i % 100 == 0 and i > 0:
+                print(f'Совершено {i} стохастических запусков.')
             self._result = all_results[i]
             if flows_cis:
                 self._result_flows = flows_results[i]
             self._prepare()
             self._stoch_run()
-
+        print(f'Совершено {count} стохастических запусков.')
         if flows_cis:
             flows_results = flows_results[:, 1:, :]
 
@@ -247,96 +254,86 @@ class EpidemicModel:
         self._duration = duration
         return self._several_stoch_starts(num_starts, True)
 
-    def _get_confidence_intervals(self, num_starts: int, flows_cis: bool, alpha_cis: float = 0.05):
+    def _get_confidence_intervals(self, num_starts: int, flows_cis: bool, alpha_cis: float, align: bool):
         if not isinstance(num_starts, int) or num_starts < 1:
             raise ModelError('Number of starts for calculating confidence intervals must be int > 1')
         if not isinstance(alpha_cis, float) or alpha_cis < 0 or alpha_cis > 1:
             raise ModelError(f'Alpha for calculating confidence intervals must be float in range [0, 1], but got {alpha_cis}')
 
         results, flows_results = self._several_stoch_starts(num_starts, flows_cis)
-        self._start(flows_cis, False) # для получения теоретического результата в self._result
-        aligned_results = self._align_stoch_results_by_peaks(results, self._result)
-        # aligned_results = results
-        self._confidence = self._calc_confidence_intervals(aligned_results, self._result, alpha_cis)
-        self._confidence_peaks = self._calc_confidence_peak_interval(results, self._result, alpha_cis)
+        self._start(flows_cis, False)  # для получения теоретического результата в self._result
+
+        shifts = self._calc_shifts(results, self._result)
+        if align:
+            results = self._align_stoch_results(results, shifts)
+        self._confidence = self._calc_confidence_intervals(results, self._result, alpha_cis)
+        self._confidence_peaks = self._calc_confidence_peak_interval(self._result, shifts, alpha_cis)
 
         if flows_cis:
-            aligned_flows = self._align_stoch_results_by_peaks(flows_results, self._result_flows)
-            # aligned_flows = flows_results
-            self._confidence_flows = self._calc_confidence_intervals(aligned_flows, self._result_flows, alpha_cis)
-            self._confidence_flow_peaks = self._calc_confidence_peak_interval(flows_results, self._result_flows, alpha_cis)
-            
-    @staticmethod
-    def _calc_peaks(stoch_results: np.array, teor_result: np.array) -> tuple[np.array, np.array]:
-        num_runs, duration, num_lines = stoch_results.shape
-        
-        increasing = teor_result[0, :] <= teor_result[1, :]
+            # потоки не выравниваю и не считаем доверительный интервал для пиков
+            self._confidence_flows = self._calc_confidence_intervals(flows_results, self._result_flows, alpha_cis)
 
-        stoch_peaks = np.zeros((num_runs, num_lines), np.int64)
-        teor_peaks = np.zeros(num_lines, np.int64)
-
-        stoch_peaks[:, increasing] = stoch_results[:, :, increasing].argmax(axis=1)
-        stoch_peaks[:, ~increasing] = stoch_results[:, :, ~increasing].argmax(axis=1)
-        
-        teor_peaks[increasing] = teor_result[:, increasing].argmax(axis=0)
-        teor_peaks[~increasing] = teor_result[:, ~increasing].argmax(axis=0)
-        
-        return stoch_peaks, teor_peaks
-    
-    def _calc_shifts(self, stoch_results: np.array, teor_result: np.array) -> tuple[np.array, np.array]:
+    def _calc_shifts(self, stoch_results: np.array, teor_result: np.array) -> np.array:
         diffs_sign = np.sign(np.diff(teor_result, axis=0))
-        with_peaks = np.any((diffs_sign > 0, axis=0) & np.any(diffs_sign < 0, axis=1))
+        with_peaks = np.any(diffs_sign > 0, axis=0) & np.any(diffs_sign < 0, axis=0)
         if not np.any(with_peaks):
-            with_peaks[:] = True
-        num_runs, duration, num_lines = stoch_results.shape
-        stoch_peaks, teor_peaks = self._calc_peaks(stoch_results, teor_result)
-        
-                 
-    def _align_stoch_results_by_peaks(self, stoch_results: np.array, teor_result: np.array):
-        # надо найти максимумы в каждом стохастическом результате и выровнять их по максимуму теоретического результата
-        num_runs, duration, num_lines = stoch_results.shape
-        stoch_peaks, teor_peaks = self._calc_peaks(stoch_results, teor_result)
+            print('Warning: не найдено ни одного состояния с пиком. Доверительные интервалы оценены без выравнивания.')
+            return np.zeros(stoch_results.shape[0])
 
+        increasings = teor_result[0, :] < teor_result.max(axis=0)
+        incr_peaks = increasings & with_peaks  # линии которые возрастают и имеют пик - больше всего похоже на I
+        if np.any(increasings & with_peaks):
+            estimating_line_i = np.where(incr_peaks)[0][0]  # первая линия из лучших похожих
+            peak_pos = teor_result[:, estimating_line_i].argmax()
+        else:
+            estimating_line_i = np.where(with_peaks)[0][0] # первая линия из тех кто просто с пиком (минимумом)
+            peak_pos = teor_result[:, estimating_line_i].argmin()
+
+        print(f'Динамика численности "{self._stage_names[estimating_line_i]}" будет '
+              f'рассматриваться для поиска времени пика')
+
+        shifts = peak_pos - stoch_results[:, :, estimating_line_i].argmax(axis=1)
+        return shifts
+
+    @staticmethod
+    def _align_stoch_results(stoch_results: np.array, shifts: np.array):
+        num_runs, duration, num_lines = stoch_results.shape
         aligned_stoch_results = np.full((num_runs, duration, num_lines), np.nan, dtype=np.float64)
         for st_i in range(num_lines):
             for run_i in range(num_runs):
-                shift = teor_peaks[st_i] - stoch_peaks[run_i, st_i]
+                shift = shifts[run_i]
                 start = shift if shift > 0 else 0
                 end = duration + shift if shift < 0 else duration
-                #print(f'{shift=}, {run_i=}, {st_i=}\n{stoch_results[run_i, :, st_i]=}')
                 rolled = np.roll(stoch_results[run_i, :, st_i], shift, axis=0)
                 aligned_stoch_results[run_i, start:end, st_i] = rolled[start:end]
-
         return aligned_stoch_results
 
-    def _calc_confidence_peak_interval(self, stoch_results: np.array, teor_result: np.array, alpha: float):
-        # надо найти максимумы в каждом стохастическом результате и посчитать доверительный интервал
-        # для максимумов относительно максимума теоретического результата
-        
+    def _get_teor_peaks(self, teor_result: np.array) -> np.array:
+        diffs_sign = np.sign(np.diff(teor_result, axis=0))
+        with_peaks = np.any(diffs_sign > 0, axis=0) & np.any(diffs_sign < 0, axis=0)
+        increasings = teor_result[0, :] < teor_result.max(axis=0)
+        teor_peaks = np.full(teor_result.shape[1], np.nan, dtype=np.float64)
+        teor_peaks[with_peaks & increasings] = teor_result[:, with_peaks & increasings].argmax(axis=0)
+        teor_peaks[with_peaks & ~increasings] = teor_result[:, with_peaks & ~increasings].argmin(axis=0)
+        return teor_peaks
+
+    def _calc_confidence_peak_interval(self, teor_result: np.array, shifts: np.array, alpha: float):
         down_limit = alpha * 100
         up_limit = (1 - alpha) * 100
 
-        # stoch_results shape - (num_runs, duration, num_stages)
-        # teor_result shape - (duration, num_stages)
+        shift_limits = np.percentile(shifts, [down_limit, up_limit], axis=0)
+        confidence = np.full((2, teor_result.shape[1]), np.nan, dtype=np.float64)
 
-        stoch_peaks, teor_peaks = self._calc_peaks(stoch_results, teor_result)
+        diffs_sign = np.sign(np.diff(teor_result, axis=0))
+        with_peaks = np.any(diffs_sign > 0, axis=0) & np.any(diffs_sign < 0, axis=0)
+        with_peaks = np.where(with_peaks)[0]
 
-        num_runs, num_stages = stoch_peaks.shape
-        confidence = np.zeros((2, num_stages), dtype=np.float64)
-        for st_i in range(num_stages):
-            low_results = stoch_peaks[stoch_peaks[:, st_i] < teor_peaks[st_i], st_i]
-            if len(low_results):
-                conf_low = np.percentile(low_results, [down_limit], axis=0)[0]
-            else:
-                conf_low = teor_peaks[st_i]
+        for st_i in with_peaks:
+            left_bound = self._peaks[st_i] + shift_limits[0]
+            right_bound = self._peaks[st_i] + shift_limits[1]
+            confidence[0, st_i] = left_bound
+            confidence[1, st_i] = right_bound
 
-            up_results = stoch_peaks[stoch_peaks[:, st_i] > teor_peaks[st_i], st_i]
-            if len(up_results):
-                conf_up = np.percentile(up_results, [up_limit], axis=0)[0]
-            else:
-                conf_up = teor_peaks[st_i]
-
-            confidence[:, st_i] = [conf_low, conf_up]
         return confidence
 
     @staticmethod
@@ -459,8 +456,8 @@ class EpidemicModel:
         return flows
 
     def _get_full_df(self) -> pd.DataFrame:
-        return pd.concat([self._get_result_df(), self._get_flows_df(),
-                          self._get_factors_df(), self._get_conf_df()], axis=1)
+        return pd.concat([self._get_result_df(), self._get_conf_df(), self._get_flows_df(), self._get_conf_flows_df(),
+                          self._get_factors_df(), ], axis=1)
 
     def _get_conf_df(self):
         if self._confidence is None:
@@ -487,12 +484,22 @@ class EpidemicModel:
         conf_df = pd.DataFrame(self._confidence_peaks, columns=self._stage_names, index=['lower', 'upper'])
         return conf_df
 
-    def _get_conf_flows_peaks_df(self):
-        if self._confidence_flow_peaks is None:
-            print('Warning: результаты по доверительным интервалам потоков должны быть сохранены во время моделирования')
+    def _get_peaks_df(self):
+        if self._peaks is None:
+            print('Warning: результаты моментов пиков численности будут только при детерменированном запуске и при оценке доверительных интервалов')
             return pd.DataFrame()
-        conf_df = pd.DataFrame(self._confidence_flow_peaks, columns=self._flow_names, index=['lower', 'upper'])
-        return conf_df
+
+        peaks_data = np.full((2, len(self._stage_names)), np.nan)
+        with_peak = ~ np.isnan(self._peaks)
+        with_peak_results = self._result[:, with_peak]
+        num_peaks = with_peak.sum()
+        peaks_data[0, with_peak] = self._peaks[with_peak]
+        t1 = self._peaks[with_peak].astype(np.int64)
+        t2 = np.arange(num_peaks)
+        temp = with_peak_results[self._peaks[with_peak].astype(np.int64), np.arange(num_peaks)]
+        peaks_data[1, with_peak] = with_peak_results[self._peaks[with_peak].astype(np.int64), np.arange(num_peaks)]
+
+        return pd.DataFrame(peaks_data, columns=self._stage_names, index=['moment', 'value'])
 
     @property
     def result_df(self) -> pd.DataFrame:
@@ -523,11 +530,26 @@ class EpidemicModel:
         return self._get_factors_df()
 
     @property
+    def peaks_df(self):
+        """
+        :return: Таблица пиков (моментов и значений) численности каждой стадии - первого локального максимума / минимума
+        """
+        return self._get_peaks_df()
+
+
+    @property
     def confidence_df(self):
         """
         :return: Таблица доверительных интервалов, верхняя и нижняя границы для численности каждой стадии во времени
         """
         return self._get_conf_df()
+
+    @property
+    def confidence_peaks_df(self):
+        """
+        :return: Таблица доверительных интервалов, левый и правый моменты возможного пика численности каждой стадии
+        """
+        return self._get_conf_peaks_df()
 
     @property
     def confidence_flows_df(self):
@@ -677,7 +699,7 @@ class EpidemicModel:
         return ax
 
     def plot(self, *args, ax: Optional[plt.Axes] = None,
-             draw_cis: bool = True, draw_peaks: bool = True) -> plt.Axes:
+             draw_cis: bool = False, draw_peaks: bool = False) -> plt.Axes:
         """
         Построение графика изменений численности стадий.
         :param args: Названия стадий, которые будут включены в график.
@@ -699,25 +721,29 @@ class EpidemicModel:
             conf_df = None
 
         if draw_peaks:
-            peaks_df = self._get_conf_peaks_df()
-            peaks_df = peaks_df[stage_names] if len(peaks_df) > 0 else None
+            peaks_df = self._get_peaks_df()
+            peaks_conf_df = self._get_conf_peaks_df()
+            if len(peaks_df) == 0 or len(peaks_conf_df) == 0:
+                peaks_conf_df = None
+                peaks_df = None
         else:
+            peaks_conf_df = None
             peaks_df = None
 
-        return self._plot(ax=ax, df=self._get_result_df()[stage_names], conf_df=conf_df, peaks_df=peaks_df,
+        return self._plot(ax=ax, df=self._get_result_df()[stage_names], conf_df=conf_df,
+                          peaks_df=peaks_df, peaks_conf_df=peaks_conf_df,
                           ylabel='количество индивидов', name=self._name)
 
     def plot_flows(self, *args, ax: plt.Axes = None,
-                   draw_cis: bool = True, draw_peaks: bool = True) -> plt.Axes:
+                   draw_cis: bool = True) -> plt.Axes:
         """
         Построение графика изменения интенсивности потоков.
         :param args: Названия потоков, которые будут включены в график.
         :param ax: Axes на котором будет построен график.
         :param draw_cis: Рисовать ли доверительные интервалы.
-        :param draw_peaks: Рисовать ли доверительные интервалы пиков.
         :return: Axes на котором будет построен график.
         """
-        ax = self._prepare_plot_args(ax, draw_cis, draw_peaks)
+        ax = self._prepare_plot_args(ax, draw_cis, False)
 
         flow_names = [f for f in args if f in self._flow_names]
         if not flow_names:
@@ -729,18 +755,13 @@ class EpidemicModel:
         else:
             conf_df = None
 
-        if draw_peaks:
-            peaks_df = self._get_conf_flows_peaks_df()
-            peaks_df = peaks_df[flow_names] if len(peaks_df) > 0 else None
-        else:
-            peaks_df = None
-
-        return self._plot(ax=ax, df=self._get_flows_df()[flow_names], conf_df=conf_df, peaks_df=peaks_df,
+        return self._plot(ax=ax, df=self._get_flows_df()[flow_names], conf_df=conf_df, peaks_df=None, peaks_conf_df=None,
                           ylabel='интенсивность потока', name=f'потоки модели {self._name}')
 
     @staticmethod
     def _plot(*, ax: Optional[plt.Axes], df: pd.DataFrame, conf_df: Optional[pd.DataFrame],
-              peaks_df: Optional[pd.DataFrame], ylabel: str, name: str) -> plt.Axes:
+              peaks_df: Optional[pd.DataFrame], peaks_conf_df: Optional[pd.DataFrame],
+              ylabel: str, name: str) -> plt.Axes:
         colors = []
 
         for sname in df.columns:
@@ -751,12 +772,15 @@ class EpidemicModel:
                 ax.fill_between(conf_df.index, conf_df[(stage, 'lower')], conf_df[(stage, 'upper')], color=color, alpha=0.2,
                                 label=f'доверительный интервал для {stage}')
 
-        if peaks_df is not None:
-            for stage, color in zip(peaks_df.columns, colors):
-                if peaks_df[stage]['lower'] != peaks_df[stage]['upper']:
-                    x = peaks_df[stage]
-                    ax.vlines(x, 0, df[stage].max(), color=color, linestyle='--',
-                              label=f'доверительный интервал пика для {stage}')
+        if peaks_conf_df is not None and peaks_df is not None:
+            peak_line_height = df.to_numpy().max() / 20
+            for stage, color in zip(peaks_conf_df.columns, colors):
+                if not np.isnan(peaks_conf_df[stage]).any() and not np.isnan(peaks_df[stage]).any():
+                    x = list(peaks_conf_df[stage].astype(int))
+                    y = peaks_df.loc['value', stage]
+                    half_peak_line = peak_line_height / 2
+                    ax.vlines(x, y - half_peak_line, y + half_peak_line, color=color)
+                    ax.hlines(y, x[0], x[1], color=color, linestyle='--', label=f'доверительный интервал времени пика численности для {stage}')
 
         ax.set_title(name)
         ax.set_xlabel('время')
