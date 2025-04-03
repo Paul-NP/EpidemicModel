@@ -32,7 +32,7 @@ model.plot(draw_cis=True, draw_peaks=True)
 plt.show()
 ```
 
-![sir example](/documentation/images/sir_example.png)
+![sir example](https://raw.githubusercontent.com/Paul-NP/EpidemicModel/master/documentation/images/sir_example.png)
 
 
 ## Ручное создание простой SIR модели
