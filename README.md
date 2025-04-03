@@ -10,7 +10,32 @@
 import epidemmo
 ```
 
-## Создание простой SIR модели
+## Использование стандартных моделей
+
+Пакет содержит несколько стандартных эпидемиологических моделей. 
+
+Вы можете изменить стартовую численность каждой стадии, а также изменить значение параметров модели.
+
+```python
+from epidemmo import Standard
+from matplotlib import pyplot as plt
+
+
+model = Standard.get_SIR_builder().build()
+
+model.set_start_stages(S=9990, I=10)
+model.set_factors(beta=0.5, gamma=0.2)
+
+model.start(60, full_save=True, get_cis=True)
+
+model.plot(draw_cis=True, draw_peaks=True)
+plt.show()
+```
+
+![sir example](/documentation/images/sir_example.png)
+
+
+## Ручное создание простой SIR модели
 
 ```python
 from epidemmo import ModelBuilder
@@ -23,34 +48,6 @@ builder.add_flow('S', 'I', 'beta', 'I').add_flow('I', 'R', 'gamma')
 
 model = builder.build()
 model.start(70)
-
-model.plot()
-
-plt.show()
-```
-
-### Результаты моделирования
-
-![sir example](https://raw.githubusercontent.com/Paul-NP/EpidemicModel/refs/heads/master/documentation/images/sir_example.png)
-
-## Использование стандартных моделей
-
-Пакет содержит несколько стандартных эпидемиологических моделей.
-
-```python
-from epidemmo import Standard
-
-model = Standard.get_SIR_builder().build()
-result = model.start(40)
-```
-Вы можете изменить стартовую численность каждой стадии, а также изменить значение параметров модели.
-
-```python
-from epidemmo import Standard
-
-model = Standard.get_SIR_builder().build()
-model.set_start_stages(S=1000, I=10, R=0)
-model.set_factors(beta=0.5)
 ```
 
 ## Вывод и запись табличных результатов
@@ -73,7 +70,7 @@ model.print_result_table()
 from epidemmo import Standard
 
 model = Standard.get_SIR_builder().build()
-model.start(60)
+model.start(60, full_save=True)
 model.write_results(write_flows=True, write_factors=True)
 ```
 
