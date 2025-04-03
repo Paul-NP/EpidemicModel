@@ -16,12 +16,15 @@ class ModelFitter:
     # method = 'Nelder-Mead'
 
     def __init__(self, model: EpidemicModel):
+        if not isinstance(model, EpidemicModel):
+            raise ModelFitterError('Model must be EpidemicModel')
+
         self._model = model
         self._population_size = model.population_size
         self._changeable_stages: dict[str, tuple[float, float]] = {}
         self._changeable_factors: dict[str, tuple[float, float]] = {}
         self._real_flows_df: Optional[pd.DataFrame] = None
-
+        self._interval: int = 1
         self._mse_history: list[float] = []
 
     @staticmethod
@@ -61,17 +64,24 @@ class ModelFitter:
         else:
             raise ModelFitterError(f'Changeable factors must be a dict or "all" or "none", got {changeable_factors}')
 
-    def fit(self, real_flows_df: pd.DataFrame):
+    def fit(self, real_flows_df: pd.DataFrame, interval: int = 1):
         if not self._changeable_stages and not self._changeable_factors:
             raise ModelFitterError('No stages or factors are changeable')
+        if not isinstance(interval, int) or interval < 1:
+            raise ModelFitterError('Interval must be int > 1')
+
+        self._interval = interval
 
         not_existing_flows = set(real_flows_df.columns) - set(self._model.flow_names)
         if not_existing_flows:
             raise ModelFitterError(f'Flows {not_existing_flows} not found in the model')
 
         self._real_flows_df = real_flows_df.copy()
-        for col in self._real_flows_df.columns:
-            self._real_flows_df[col] = uniform_filter1d(self._real_flows_df[col], size=10)
+
+        window_wide = int(len(self._real_flows_df) / 20)
+        if window_wide > 1 and self._interval == 1:
+            for col in self._real_flows_df.columns:
+                self._real_flows_df[col] = uniform_filter1d(self._real_flows_df[col], size=window_wide)
 
         param_start = []
         bounds = []
@@ -96,16 +106,10 @@ class ModelFitter:
         self._model.set_start_stages(**start_stages)
         self._model.set_factors(**factors)
 
-        self._model.start(len(self._real_flows_df) + 1, full_save=True)
-
-        # penalty = (self._model.population_size - self._population_size) ** 2
-        # result_mse = mse(self._model.flows_df[self._real_flows_df.columns][:-1], self._real_flows_df) + penalty
+        self._model.start(len(self._real_flows_df) + 1, delta=self._interval, full_save=True)
 
         result_mse = mse(self._model.flows_df[self._real_flows_df.columns], self._real_flows_df)
 
         self._mse_history.append(result_mse)
         return result_mse
-
-
-
 
