@@ -6,6 +6,7 @@ import pandas as pd
 from itertools import product
 
 from matplotlib import pyplot as plt
+from matplotlib.pyplot import ylabel
 from prettytable import PrettyTable
 from scipy.stats import poisson, alpha
 from datetime import datetime
@@ -454,9 +455,12 @@ class EpidemicModel:
         table.float_format = f".{cls.__len_float}"
         return table
 
-    def _get_result_df(self) -> pd.DataFrame:
+    def _get_result_df(self, as_probability: bool = False) -> pd.DataFrame:
         result = pd.DataFrame(self._first_by_delta(self._result), columns=self._stage_names)
-        return result.reindex(np.arange(len(result)), method='ffill')
+        result = result.reindex(np.arange(len(result)), method='ffill')
+        if as_probability:
+            result = self._df_as_probability(result)
+        return result
 
     def _get_factors_df(self) -> pd.DataFrame:
         if self._result_factors is None:
@@ -481,14 +485,17 @@ class EpidemicModel:
         return pd.concat([self._get_result_df(), self._get_conf_df(), self._get_flows_df(), self._get_conf_flows_df(),
                           self._get_factors_df()], axis=1)
 
-    def _get_conf_df(self):
+    def _get_conf_df(self, as_probability: bool = False):
         if self._confidence is None:
             print('Warning: результаты по доверительным интервалам стадий должны быть сохранены во время моделирования')
             return pd.DataFrame()
         col_names = [(st_name, limit) for st_name in self._stage_names for limit in ['lower', 'upper']]
         index = pd.MultiIndex.from_tuples(col_names, names=['stage', 'limit'])
         conf_df = pd.DataFrame(self._confidence, columns=index)
-        return conf_df.reindex(np.arange(len(conf_df)))
+        conf_df = conf_df.reindex(np.arange(len(conf_df)))
+        if as_probability:
+            conf_df = self._df_as_probability(conf_df)
+        return conf_df
 
     def _get_conf_flows_df(self):
         if self._confidence_flows is None:
@@ -506,7 +513,7 @@ class EpidemicModel:
         conf_df = pd.DataFrame(self._confidence_peaks, columns=self._stage_names, index=['lower', 'upper'])
         return conf_df
 
-    def _get_peaks_df(self):
+    def _get_peaks_df(self, as_probability: bool = False):
         if self._peaks is None:
             print('Warning: результаты моментов пиков численности будут только при детерменированном запуске и при оценке доверительных интервалов')
             return pd.DataFrame()
@@ -517,6 +524,8 @@ class EpidemicModel:
         num_peaks = with_peak.sum()
         peaks_data[0, with_peak] = self._peaks[with_peak]
         peaks_data[1, with_peak] = with_peak_results[self._peaks[with_peak].astype(np.int64), np.arange(num_peaks)]
+        if as_probability:
+            peaks_data[1, with_peak] = peaks_data[1, with_peak] / self.population_size
 
         return pd.DataFrame(peaks_data, columns=self._stage_names, index=['moment', 'value'])
 
@@ -706,6 +715,9 @@ class EpidemicModel:
 
         return system_of_equations
 
+    def _df_as_probability(self, df: pd.DataFrame) -> pd.DataFrame:
+        return df / self.population_size
+
     def _prepare_plot_args(self, ax, draw_cis, draw_peaks) -> plt.Axes:
         if ax is None:
             fig, ax = plt.subplots(1, 1)
@@ -717,12 +729,13 @@ class EpidemicModel:
             raise ModelError('draw_peaks must be bool')
         return ax
 
-    def plot(self, *args, ax: Optional[plt.Axes] = None,
+    def plot(self, *args, ax: Optional[plt.Axes] = None, as_probability: bool = False,
              draw_cis: bool = False, draw_peaks: bool = False) -> plt.Axes:
         """
         Построение графика изменений численности стадий.
         :param args: Названия стадий, которые будут включены в график.
         :param ax: Axes на котором будет построен график.
+        :param as_probability: Построить ли график в виде вероятностей.
         :param draw_cis: Рисовать ли доверительные интервалы.
         :param draw_peaks: Рисовать ли доверительные интервалы пиков.
         :return: Axes на котором будет построен график.
@@ -734,13 +747,13 @@ class EpidemicModel:
             stage_names = list(self._stage_names)
 
         if draw_cis:
-            conf_df = self._get_conf_df()
+            conf_df = self._get_conf_df(as_probability)
             conf_df = conf_df[stage_names] if len(conf_df) > 0 else None
         else:
             conf_df = None
 
         if draw_peaks:
-            peaks_df = self._get_peaks_df()
+            peaks_df = self._get_peaks_df(as_probability)
             peaks_conf_df = self._get_conf_peaks_df()
             if len(peaks_df) == 0 or len(peaks_conf_df) == 0:
                 peaks_conf_df = None
@@ -748,11 +761,13 @@ class EpidemicModel:
         else:
             peaks_conf_df = None
             peaks_df = None
+
         significance = (1 - self._cis_significance) * 100
         colors, _ = self._get_color_schema()
-        return self._plot(ax=ax, df=self._get_result_df()[stage_names], conf_df=conf_df,
+        ylabel = 'вероятность' if as_probability else 'количество индивидов'
+        return self._plot(ax=ax, df=self._get_result_df(as_probability)[stage_names], conf_df=conf_df,
                           peaks_df=peaks_df, peaks_conf_df=peaks_conf_df,
-                          ylabel='количество индивидов', name=self._name, significance=significance, colors=colors)
+                          ylabel=ylabel, name=self._name, significance=significance, colors=colors)
 
     def plot_flows(self, *args, ax: plt.Axes = None,
                    draw_cis: bool = True) -> plt.Axes:
@@ -780,6 +795,24 @@ class EpidemicModel:
         return self._plot(ax=ax, df=self._get_flows_df()[flow_names], conf_df=conf_df, peaks_df=None, peaks_conf_df=None,
                           ylabel='интенсивность потока', name=f'потоки модели {self._name}', significance=significance,
                           colors=colors)
+
+    def stack_plot(self, *args, ax: plt.Axes = None) -> plt.Axes:
+        ax = self._prepare_plot_args(ax, True, True)
+        colors, _ = self._get_color_schema()
+
+        stage_names = [s for s in args if s in self._stage_names]
+        if not stage_names:
+            stage_names = list(self._stage_names)
+        result_df = self._get_result_df(as_probability=True)
+        ax.stackplot(result_df.index, *result_df[stage_names].to_numpy().T,
+                     colors=[colors[s] for s in stage_names], labels=[f'Прогноз «{s}»' for s in stage_names])
+
+        ax.set_title(self._name)
+        ax.set_ylabel('вероятность')
+        ax.set_xlabel('время')
+        ax.grid()
+        ax.legend()
+        return ax
 
     @staticmethod
     def _plot(*, ax: Optional[plt.Axes], df: pd.DataFrame, conf_df: Optional[pd.DataFrame],

@@ -211,7 +211,12 @@ class ModelBuilder:
         return stage_factor
 
     def _generate_model_name(self):
-        self._model_name = ''.join([st_name[0].upper() for st_name in self._stages.keys()])
+        length = 1
+        short_names = [st_name[0: length] for st_name in self._stages.keys()]
+        while len(self._stages) != len(set(short_names)):
+            length += 1
+            short_names = [st_name[0: length] for st_name in self._stages.keys()]
+        self._model_name = ''.join(short_names)
 
     def _check_completeness(self):
         start_stages = [fl.start for fl in self._flows]
